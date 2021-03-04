@@ -1,6 +1,7 @@
 package work
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -74,13 +75,14 @@ func TestClientWorkerObservations(t *testing.T) {
 	_, err = enqueuer.Enqueue("foo", Q{"a": 3, "b": 4})
 	assert.Nil(t, err)
 
+	ctx, cancel := context.WithCancel(context.Background())
 	wp := NewWorkerPool(TestContext{}, 10, ns, pool)
 	wp.Job("wat", func(job *Job) error {
-		time.Sleep(50 * time.Millisecond)
+		<-ctx.Done()
 		return nil
 	})
 	wp.Job("foo", func(job *Job) error {
-		time.Sleep(50 * time.Millisecond)
+		<-ctx.Done()
 		return nil
 	})
 	wp.Start()
@@ -125,6 +127,7 @@ func TestClientWorkerObservations(t *testing.T) {
 	// 	assert.True(t, ob.WorkerID != "")
 	// }
 
+	cancel()
 	wp.Stop()
 
 	observations, err = client.WorkerObservations()
@@ -139,48 +142,67 @@ func TestClientQueues(t *testing.T) {
 
 	enqueuer := NewEnqueuer(ns, pool)
 	_, err := enqueuer.Enqueue("wat", nil)
+	assert.NoError(t, err)
 	_, err = enqueuer.Enqueue("foo", nil)
+	assert.NoError(t, err)
+	_, err = enqueuer.Enqueue("foo", nil)
+	assert.NoError(t, err)
 	_, err = enqueuer.Enqueue("zaz", nil)
+	assert.NoError(t, err)
 
 	// Start a pool to work on it. It's going to work on the queues
 	// side effect of that is knowing which jobs are avail
-	wp := NewWorkerPool(TestContext{}, 10, ns, pool)
-	wp.Job("wat", func(job *Job) error {
+	wp := NewWorkerPool(TestContext{}, 4, ns, pool)
+	ctx, cancel := context.WithCancel(context.Background())
+	wp.JobWithOptions("wat", JobOptions{MaxConcurrency: 10}, func(job *Job) error {
+		<-ctx.Done()
 		return nil
 	})
 	wp.Job("foo", func(job *Job) error {
+		<-ctx.Done()
 		return nil
 	})
 	wp.Job("zaz", func(job *Job) error {
+		<-ctx.Done()
 		return nil
 	})
 	wp.Start()
 	time.Sleep(20 * time.Millisecond)
-	wp.Stop()
 
 	setNowEpochSecondsMock(1425263409)
 	defer resetNowEpochSecondsMock()
-	enqueuer.Enqueue("foo", nil)
+	_, err = enqueuer.Enqueue("foo", nil)
+	assert.NoError(t, err)
 	setNowEpochSecondsMock(1425263509)
-	enqueuer.Enqueue("foo", nil)
+	_, err = enqueuer.Enqueue("foo", nil)
+	assert.NoError(t, err)
 	setNowEpochSecondsMock(1425263609)
-	enqueuer.Enqueue("wat", nil)
+	_, err = enqueuer.Enqueue("wat", nil)
+	assert.NoError(t, err)
 
 	setNowEpochSecondsMock(1425263709)
 	client := NewClient(ns, pool)
 	queues, err := client.Queues()
 	assert.NoError(t, err)
+	cancel()
+	wp.Stop()
 
 	assert.Equal(t, 3, len(queues))
 	assert.Equal(t, "foo", queues[0].JobName)
 	assert.EqualValues(t, 2, queues[0].Count)
 	assert.EqualValues(t, 300, queues[0].Latency)
+	assert.EqualValues(t, 0, queues[0].MaxConcurrency)
+	assert.EqualValues(t, 2, queues[0].LockCount)
 	assert.Equal(t, "wat", queues[1].JobName)
 	assert.EqualValues(t, 1, queues[1].Count)
 	assert.EqualValues(t, 100, queues[1].Latency)
+	assert.EqualValues(t, 10, queues[1].MaxConcurrency)
+	assert.EqualValues(t, 1, queues[1].LockCount)
 	assert.Equal(t, "zaz", queues[2].JobName)
 	assert.EqualValues(t, 0, queues[2].Count)
 	assert.EqualValues(t, 0, queues[2].Latency)
+	assert.EqualValues(t, 0, queues[2].MaxConcurrency)
+	assert.EqualValues(t, 1, queues[2].LockCount)
 }
 
 func TestClientScheduledJobs(t *testing.T) {

@@ -204,9 +204,11 @@ func (c *Client) WorkerObservations() ([]*WorkerObservation, error) {
 
 // Queue represents a queue that holds jobs with the same name. It indicates their name, count, and latency (in seconds). Latency is a measurement of how long ago the next job to be processed was enqueued.
 type Queue struct {
-	JobName string `json:"job_name"`
-	Count   int64  `json:"count"`
-	Latency int64  `json:"latency"`
+	JobName        string `json:"job_name"`
+	Count          int64  `json:"count"`
+	Latency        int64  `json:"latency"`
+	MaxConcurrency int64  `json:"max_concurrency"`
+	LockCount      int64  `json:"lock_count"`
 }
 
 // Queues returns the Queue's it finds.
@@ -223,6 +225,8 @@ func (c *Client) Queues() ([]*Queue, error) {
 
 	for _, jobName := range jobNames {
 		conn.Send("LLEN", redisKeyJobs(c.namespace, jobName))
+		conn.Send("GET", redisKeyJobsConcurrency(c.namespace, jobName))
+		conn.Send("GET", redisKeyJobsLock(c.namespace, jobName))
 	}
 
 	if err := conn.Flush(); err != nil {
@@ -235,16 +239,28 @@ func (c *Client) Queues() ([]*Queue, error) {
 	for _, jobName := range jobNames {
 		count, err := redis.Int64(conn.Receive())
 		if err != nil {
-			logError("client.queues.receive", err)
+			logError("client.queues.receive.count", err)
 			return nil, err
 		}
 
-		queue := &Queue{
-			JobName: jobName,
-			Count:   count,
+		maxConcurrency, err := redis.Int64(conn.Receive())
+		if err != nil && err != redis.ErrNil {
+			logError("client.queues.receive.max_concurrency", err)
+			return nil, err
 		}
 
-		queues = append(queues, queue)
+		lockCount, err := redis.Int64(conn.Receive())
+		if err != nil && err != redis.ErrNil {
+			logError("client.queues.receive.lock_count", err)
+			return nil, err
+		}
+
+		queues = append(queues, &Queue{
+			JobName:        jobName,
+			Count:          count,
+			LockCount:      lockCount,
+			MaxConcurrency: maxConcurrency,
+		})
 	}
 
 	for _, s := range queues {
