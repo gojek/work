@@ -230,6 +230,20 @@ func (wp *WorkerPool) Stop() {
 		}(w)
 	}
 	wg.Wait()
+	jobTypes := make([]string, 0, len(wp.jobTypes))
+	for k := range wp.jobTypes {
+		jobTypes = append(jobTypes, k)
+	}
+
+	err := wp.deadPoolReaper.requeueInProgressJobs(wp.workerPoolID, jobTypes)
+	if err != nil {
+		logError("dead_pool_reaper.requeue_in_progress_jobs", err)
+	}
+
+	err = wp.deadPoolReaper.cleanStaleLockInfo(wp.workerPoolID, jobTypes)
+	if err != nil {
+		logError("dead_pool_reaper.clean_stale_lock_info", err)
+	}
 	wp.heartbeater.stop()
 	wp.retrier.stop()
 	wp.scheduler.stop()
