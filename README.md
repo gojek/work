@@ -1,4 +1,4 @@
-# gocraft/work [![GoDoc](https://godoc.org/github.com/gocraft/work?status.png)](https://godoc.org/github.com/gocraft/work)
+# gocraft/work [![PkgGoDev][pkg-go-dev-xgo-badge]][pkg-go-dev-xgo] [![build][github-workflow-badge]][github-workflow]
 
 gocraft/work lets you enqueue and processes background jobs in Go. Jobs are durable and backed by Redis. Very similar to Sidekiq for Go.
 
@@ -375,3 +375,8 @@ These packages were developed by the [engineering team](https://eng.uservoice.co
 * Jonathan Novak -- [https://github.com/cypriss](https://github.com/cypriss)
 * Tai-Lin Chu -- [https://github.com/taylorchu](https://github.com/taylorchu)
 * Sponsored by [UserVoice](https://eng.uservoice.com)
+
+[pkg-go-dev-xgo-badge]: https://pkg.go.dev/badge/github.com/gojek/work
+[pkg-go-dev-xgo]: https://pkg.go.dev/mod/github.com/gojek/work?tab=packages
+[github-workflow-badge]: https://github.com/gojek/work/workflows/build/badge.svg
+[github-workflow]: https://github.com/gojek/work/actions?query=workflow%3Abuild
