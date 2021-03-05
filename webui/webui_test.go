@@ -9,13 +9,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/gocraft/work"
 	"github.com/gomodule/redigo/redis"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestWebUIStartStop(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	cleanKeyspace(ns, pool)
 
@@ -27,7 +28,7 @@ func TestWebUIStartStop(t *testing.T) {
 type TestContext struct{}
 
 func TestWebUIPing(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	cleanKeyspace(ns, pool)
 	s := NewServer(ns, pool, ":6666")
@@ -39,7 +40,7 @@ func TestWebUIPing(t *testing.T) {
 }
 
 func TestWebUIQueues(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	cleanKeyspace(ns, pool)
 
@@ -95,7 +96,7 @@ func TestWebUIQueues(t *testing.T) {
 }
 
 func TestWebUIWorkerPools(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	cleanKeyspace(ns, pool)
 
@@ -133,7 +134,7 @@ func TestWebUIWorkerPools(t *testing.T) {
 }
 
 func TestWebUIBusyWorkers(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	cleanKeyspace(ns, pool)
 
@@ -195,7 +196,7 @@ func TestWebUIBusyWorkers(t *testing.T) {
 }
 
 func TestWebUIRetryJobs(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	cleanKeyspace(ns, pool)
 
@@ -238,7 +239,7 @@ func TestWebUIRetryJobs(t *testing.T) {
 }
 
 func TestWebUIScheduledJobs(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "testwork"
 	cleanKeyspace(ns, pool)
 
@@ -271,7 +272,7 @@ func TestWebUIScheduledJobs(t *testing.T) {
 }
 
 func TestWebUIDeadJobs(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "testwork"
 	cleanKeyspace(ns, pool)
 
@@ -359,7 +360,7 @@ func TestWebUIDeadJobs(t *testing.T) {
 }
 
 func TestWebUIDeadJobsDeleteRetryAll(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "testwork"
 	cleanKeyspace(ns, pool)
 
@@ -460,7 +461,7 @@ func TestWebUIDeadJobsDeleteRetryAll(t *testing.T) {
 }
 
 func TestWebUIAssets(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "testwork"
 	s := NewServer(ns, pool, ":6666")
 
@@ -475,13 +476,18 @@ func TestWebUIAssets(t *testing.T) {
 	s.router.ServeHTTP(recorder, request)
 }
 
-func newTestPool(addr string) *redis.Pool {
+func newTestPool(t testing.TB) *redis.Pool {
+	t.Helper()
+
+	s, err := miniredis.Run()
+	assert.NoError(t, err)
+	t.Cleanup(s.Close)
 	return &redis.Pool{
 		MaxActive:   3,
 		MaxIdle:     3,
 		IdleTimeout: 240 * time.Second,
 		Dial: func() (redis.Conn, error) {
-			return redis.Dial("tcp", addr)
+			return redis.Dial("tcp", s.Addr())
 		},
 		Wait: true,
 	}

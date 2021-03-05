@@ -7,12 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/gomodule/redigo/redis"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestWorkerBasics(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	job1 := "job1"
 	job2 := "job2"
@@ -89,7 +90,7 @@ func TestWorkerBasics(t *testing.T) {
 }
 
 func TestWorkerInProgress(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	job1 := "job1"
 	deleteQueue(pool, ns, job1)
@@ -142,7 +143,7 @@ func TestWorkerInProgress(t *testing.T) {
 }
 
 func TestWorkerRetry(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	job1 := "job1"
 	deleteQueue(pool, ns, job1)
@@ -189,7 +190,7 @@ func TestWorkerRetry(t *testing.T) {
 
 // Check if a custom backoff function functions functionally.
 func TestWorkerRetryWithCustomBackoff(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	job1 := "job1"
 	deleteQueue(pool, ns, job1)
@@ -239,7 +240,7 @@ func TestWorkerRetryWithCustomBackoff(t *testing.T) {
 }
 
 func TestWorkerDead(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	job1 := "job1"
 	job2 := "job2"
@@ -302,7 +303,7 @@ func TestWorkerDead(t *testing.T) {
 }
 
 func TestWorkersPaused(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	job1 := "job1"
 	deleteQueue(pool, ns, job1)
@@ -381,7 +382,7 @@ func TestStop(t *testing.T) {
 }
 
 func BenchmarkJobProcessing(b *testing.B) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(b)
 	ns := "work"
 	cleanKeyspace(ns, pool)
 	enqueuer := NewEnqueuer(ns, pool)
@@ -405,17 +406,19 @@ func BenchmarkJobProcessing(b *testing.B) {
 	wp.Stop()
 }
 
-func newTestPool(addr string) *redis.Pool {
+func newTestPool(t testing.TB) *redis.Pool {
+	t.Helper()
+
+	s, err := miniredis.Run()
+	assert.NoError(t, err)
+	t.Cleanup(s.Close)
+
 	return &redis.Pool{
 		MaxActive:   10,
 		MaxIdle:     10,
 		IdleTimeout: 240 * time.Second,
 		Dial: func() (redis.Conn, error) {
-			c, err := redis.Dial("tcp", addr)
-			if err != nil {
-				return nil, err
-			}
-			return c, nil
+			return redis.Dial("tcp", s.Addr())
 		},
 		Wait: true,
 	}
@@ -598,7 +601,7 @@ type emptyCtx struct{}
 // https://github.com/gocraft/work/issues/24
 func TestWorkerPoolStop(t *testing.T) {
 	ns := "will_it_end"
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	var started, stopped int32
 	num_iters := 30
 

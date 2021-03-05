@@ -10,7 +10,7 @@ import (
 )
 
 func TestEnqueue(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	cleanKeyspace(ns, pool)
 	enqueuer := NewEnqueuer(ns, pool)
@@ -52,7 +52,7 @@ func TestEnqueue(t *testing.T) {
 }
 
 func TestEnqueueIn(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	cleanKeyspace(ns, pool)
 	enqueuer := NewEnqueuer(ns, pool)
@@ -99,7 +99,7 @@ func TestEnqueueIn(t *testing.T) {
 }
 
 func TestEnqueueUnique(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	cleanKeyspace(ns, pool)
 	enqueuer := NewEnqueuer(ns, pool)
@@ -175,7 +175,7 @@ func TestEnqueueUnique(t *testing.T) {
 }
 
 func TestEnqueueUniqueIn(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	cleanKeyspace(ns, pool)
 	enqueuer := NewEnqueuer(ns, pool)
@@ -235,7 +235,7 @@ func TestEnqueueUniqueByKey(t *testing.T) {
 	var arg3 string
 	var arg4 string
 
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	cleanKeyspace(ns, pool)
 	enqueuer := NewEnqueuer(ns, pool)
@@ -316,7 +316,7 @@ func TestEnqueueUniqueByKey(t *testing.T) {
 }
 
 func EnqueueUniqueInByKey(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	cleanKeyspace(ns, pool)
 	enqueuer := NewEnqueuer(ns, pool)

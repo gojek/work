@@ -4,6 +4,7 @@ go 1.14
 
 require (
 	github.com/albrow/jobs v0.4.2
+	github.com/alicebob/miniredis/v2 v2.14.3 // indirect
 	github.com/benmanns/goworker v0.1.3
 	github.com/bitly/go-simplejson v0.5.0 // indirect
 	github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869 // indirect

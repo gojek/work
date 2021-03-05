@@ -73,7 +73,7 @@ func TestWorkerPoolMiddlewareValidations(t *testing.T) {
 }
 
 func TestWorkerPoolStartStop(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	wp := NewWorkerPool(TestContext{}, 10, ns, pool)
 	wp.Start()
@@ -85,7 +85,7 @@ func TestWorkerPoolStartStop(t *testing.T) {
 }
 
 func TestWorkerPoolValidations(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	wp := NewWorkerPool(TestContext{}, 10, ns, pool)
 
@@ -115,7 +115,7 @@ func TestWorkerPoolValidations(t *testing.T) {
 }
 
 func TestWorkersPoolRunSingleThreaded(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	job1 := "job1"
 	numJobs, concurrency, sleepTime := 5, 5, 2
@@ -158,7 +158,7 @@ func TestWorkersPoolRunSingleThreaded(t *testing.T) {
 }
 
 func TestWorkerPoolPauseSingleThreadedJobs(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns, job1 := "work", "job1"
 	numJobs, concurrency, sleepTime := 5, 5, 2
 	wp := setupTestWorkerPool(pool, ns, job1, concurrency, JobOptions{Priority: 1, MaxConcurrency: 1})

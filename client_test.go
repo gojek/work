@@ -12,7 +12,7 @@ import (
 type TestContext struct{}
 
 func TestClientWorkerPoolHeartbeats(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	cleanKeyspace(ns, pool)
 
@@ -64,7 +64,7 @@ func TestClientWorkerPoolHeartbeats(t *testing.T) {
 }
 
 func TestClientWorkerObservations(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	cleanKeyspace(ns, pool)
 
@@ -133,7 +133,7 @@ func TestClientWorkerObservations(t *testing.T) {
 }
 
 func TestClientQueues(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	cleanKeyspace(ns, pool)
 
@@ -184,7 +184,7 @@ func TestClientQueues(t *testing.T) {
 }
 
 func TestClientScheduledJobs(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	cleanKeyspace(ns, pool)
 
@@ -232,7 +232,7 @@ func TestClientScheduledJobs(t *testing.T) {
 }
 
 func TestClientRetryJobs(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	cleanKeyspace(ns, pool)
 
@@ -271,7 +271,7 @@ func TestClientRetryJobs(t *testing.T) {
 }
 
 func TestClientDeadJobs(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "testwork"
 	cleanKeyspace(ns, pool)
 
@@ -326,7 +326,7 @@ func TestClientDeadJobs(t *testing.T) {
 }
 
 func TestClientDeleteDeadJob(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "testwork"
 	cleanKeyspace(ns, pool)
 
@@ -355,7 +355,7 @@ func TestClientDeleteDeadJob(t *testing.T) {
 }
 
 func TestClientRetryDeadJob(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "testwork"
 	cleanKeyspace(ns, pool)
 
@@ -411,7 +411,7 @@ func TestClientRetryDeadJob(t *testing.T) {
 }
 
 func TestClientRetryDeadJobWithArgs(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "testwork"
 	cleanKeyspace(ns, pool)
 
@@ -455,7 +455,7 @@ func TestClientRetryDeadJobWithArgs(t *testing.T) {
 }
 
 func TestClientDeleteAllDeadJobs(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "testwork"
 	cleanKeyspace(ns, pool)
 
@@ -481,7 +481,7 @@ func TestClientDeleteAllDeadJobs(t *testing.T) {
 }
 
 func TestClientRetryAllDeadJobs(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "testwork"
 	cleanKeyspace(ns, pool)
 
@@ -539,7 +539,7 @@ func TestClientRetryAllDeadJobs(t *testing.T) {
 }
 
 func TestClientRetryAllDeadJobsBig(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "testwork"
 	cleanKeyspace(ns, pool)
 
@@ -608,7 +608,7 @@ func TestClientRetryAllDeadJobsBig(t *testing.T) {
 }
 
 func TestClientDeleteScheduledJob(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "testwork"
 	cleanKeyspace(ns, pool)
 
@@ -629,7 +629,7 @@ func TestClientDeleteScheduledJob(t *testing.T) {
 }
 
 func TestClientDeleteScheduledUniqueJob(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "testwork"
 	cleanKeyspace(ns, pool)
 
@@ -650,7 +650,7 @@ func TestClientDeleteScheduledUniqueJob(t *testing.T) {
 }
 
 func TestClientDeleteRetryJob(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "testwork"
 	cleanKeyspace(ns, pool)
 

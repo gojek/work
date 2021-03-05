@@ -9,7 +9,7 @@ import (
 )
 
 func TestDeadPoolReaper(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	cleanKeyspace(ns, pool)
 
@@ -46,6 +46,10 @@ func TestDeadPoolReaper(t *testing.T) {
 	assert.NoError(t, err)
 	err = conn.Flush()
 	assert.NoError(t, err)
+
+	// Without this, the assertion for deadPools fails on GitHub CI. Could have
+	// something to do with in-memory redis instance.
+	time.Sleep(10*time.Millisecond)
 
 	// Test getting dead pool
 	reaper := newDeadPoolReaper(ns, pool, []string{})
@@ -92,7 +96,7 @@ func TestDeadPoolReaper(t *testing.T) {
 }
 
 func TestDeadPoolReaperNoHeartbeat(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 
 	conn := pool.Get()
@@ -179,7 +183,7 @@ func TestDeadPoolReaperNoHeartbeat(t *testing.T) {
 }
 
 func TestDeadPoolReaperNoJobTypes(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	cleanKeyspace(ns, pool)
 
@@ -208,6 +212,10 @@ func TestDeadPoolReaperNoJobTypes(t *testing.T) {
 
 	err = conn.Flush()
 	assert.NoError(t, err)
+
+	// Without this, the assertion for deadPools fails on GitHub CI. Could have
+	// something to do with in-memory redis instance.
+	time.Sleep(10*time.Millisecond)
 
 	// Test getting dead pool
 	reaper := newDeadPoolReaper(ns, pool, []string{})
@@ -255,7 +263,7 @@ func TestDeadPoolReaperNoJobTypes(t *testing.T) {
 }
 
 func TestDeadPoolReaperWithWorkerPools(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	job1 := "job1"
 	stalePoolID := "aaa"
@@ -295,7 +303,7 @@ func TestDeadPoolReaperWithWorkerPools(t *testing.T) {
 }
 
 func TestDeadPoolReaperCleanStaleLocks(t *testing.T) {
-	pool := newTestPool(":6379")
+	pool := newTestPool(t)
 	ns := "work"
 	cleanKeyspace(ns, pool)
 
