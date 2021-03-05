@@ -154,7 +154,7 @@ func TestWorkersPoolRunSingleThreaded(t *testing.T) {
 	assert.EqualValues(t, 0, listSize(pool, redisKeyJobs(ns, job1)))
 	assert.EqualValues(t, 0, listSize(pool, redisKeyJobsInProgress(ns, wp.workerPoolID, job1)))
 	assert.EqualValues(t, 0, getInt64(pool, redisKeyJobsLock(ns, job1)))
-	assert.EqualValues(t, 0, hgetInt64(pool, redisKeyJobsLockInfo(ns, job1), wp.workerPoolID))
+	assert.False(t, hexists(pool, redisKeyJobsLockInfo(ns, job1), wp.workerPoolID))
 }
 
 func TestWorkerPoolPauseSingleThreadedJobs(t *testing.T) {
@@ -203,7 +203,7 @@ func TestWorkerPoolPauseSingleThreadedJobs(t *testing.T) {
 	assert.EqualValues(t, 0, listSize(pool, redisKeyJobs(ns, job1)))
 	assert.EqualValues(t, 0, listSize(pool, redisKeyJobsInProgress(ns, wp.workerPoolID, job1)))
 	assert.EqualValues(t, 0, getInt64(pool, redisKeyJobsLock(ns, job1)))
-	assert.EqualValues(t, 0, hgetInt64(pool, redisKeyJobsLockInfo(ns, job1), wp.workerPoolID))
+	assert.False(t, hexists(pool, redisKeyJobsLockInfo(ns, job1), wp.workerPoolID))
 }
 
 // Test Helpers

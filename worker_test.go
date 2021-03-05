@@ -366,15 +366,19 @@ func TestWorkersPaused(t *testing.T) {
 
 // Test that in the case of an unavailable Redis server,
 // the worker loop exits in the case of a WorkerPool.Stop
-func TestStop(t *testing.T) {
-	s, err := miniredis.Run()
-	assert.Nil(t, err)
-	defer s.Close()
+func TestStopWithUnavailableRedis(t *testing.T) {
 	redisPool := &redis.Pool{
 		Dial: func() (redis.Conn, error) {
-			return redis.Dial("tcp", s.Addr(), redis.DialConnectTimeout(1*time.Second))
+			return redis.Dial("tcp", "notworking:6379", redis.DialConnectTimeout(1*time.Second))
 		},
 	}
+	wp := NewWorkerPool(TestContext{}, 10, "work", redisPool)
+	wp.Start()
+	wp.Stop()
+}
+
+func TestStop(t *testing.T) {
+	redisPool := newTestPool(t)
 
 	namespace := "work"
 	wp := NewWorkerPool(TestContext{}, 10, namespace, redisPool)
@@ -393,14 +397,7 @@ func TestStop(t *testing.T) {
 }
 
 func TestStopCleanup(t *testing.T) {
-	s, err := miniredis.Run()
-	assert.Nil(t, err)
-	defer s.Close()
-	redisPool := &redis.Pool{
-		Dial: func() (redis.Conn, error) {
-			return redis.Dial("tcp", s.Addr(), redis.DialConnectTimeout(1*time.Second))
-		},
-	}
+	redisPool := newTestPool(t)
 
 	namespace := "work"
 	jobType := "dummyJob"
@@ -419,7 +416,7 @@ func TestStopCleanup(t *testing.T) {
 	// workers. The following redis commands are equivalent to a job in
 	// progress.
 	conn := redisPool.Get()
-	err = conn.Send("LPUSH", redisKeyJobsInProgress(namespace, wp.workerPoolID, jobType), jobData)
+	err := conn.Send("LPUSH", redisKeyJobsInProgress(namespace, wp.workerPoolID, jobType), jobData)
 	assert.NoError(t, err)
 	err = conn.Send("SET", redisKeyJobsLock(namespace, jobType), 1)
 	assert.NoError(t, err)
@@ -552,6 +549,17 @@ func hgetInt64(pool *redis.Pool, redisKey, hashKey string) int64 {
 		panic("could not HGET int64: " + err.Error())
 	}
 	return v
+}
+
+func hexists(pool *redis.Pool, redisKey, hashKey string) bool {
+	conn := pool.Get()
+	defer conn.Close()
+
+	ok, err := redis.Bool(conn.Do("HEXISTS", redisKey, hashKey))
+	if err != nil {
+		panic("could not HEXISTS: " + err.Error())
+	}
+	return ok
 }
 
 func jobOnZset(pool *redis.Pool, key string) (int64, *Job) {
