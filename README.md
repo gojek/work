@@ -12,6 +12,43 @@ gocraft/work lets you enqueue and processes background jobs in Go. Jobs are dura
 * Periodically enqueue jobs on a cron-like schedule.
 * Pause / unpause jobs and control concurrency within and across processes
 
+## Fork - Important Changes
+
+#### Usage
+
+```shell
+go get github.com/gocraft/work && \
+  go mod edit -replace github.com/gocraft/work=github.com/gojek/work@latest && \
+  go mod tidy
+```
+
+#### Refresh Node.js dependencies for WebUI (`99f237a`). 
+
+This fixes multiple security vulnerabilities.
+
+#### Requeue in progress jobs and clean stale lock info on stop (#1). 
+
+In case there is a failover with a Redis Sentinel cluster with data loss, there can be stale lock information which can 
+cause job processing to be stuck if the max concurrency limit is reached. Therefore, the jobs which were in progress are
+re-enqueued, and the stale lock info for the worker pool is cleaned up.
+
+**NOTE**: This is only necessary for worker instance with Sentinel Redis setup, in conjunction with max concurrency 
+being defined for jobs.
+
+**:warning:WARNING**: This can result in jobs being executed multiple times as we re-enqueue the jobs from in-progress 
+queue. It is possible that the job was actually processed successfully by the worker, but the change for removing from 
+in-progress queue was lost.
+
+#### Expose lock count & max concurrency for each job (#2)
+
+Added to the queue info accessible from 
+[`work.Client.Queues()`](https://pkg.go.dev/github.com/gojek/work#Client.Queues). Useful for alerting when lock count is
+consistently equal to the max concurrency possibly indicating that stale lock count is resulting in jobs not being
+picked up.
+
+For the cleanup to be thorough, [`work.(*WorkerPool).Stop`](https://pkg.go.dev/github.com/gojek/work#WorkerPool.Stop) 
+would need to be called on each worker pool instance.
+
 ## Enqueue new jobs
 
 To enqueue jobs, you need to make an Enqueuer with a redis namespace and a redigo pool. Each enqueued job has a name and can take optional arguments. Arguments are k/v pairs (serialized as JSON internally).
