@@ -192,6 +192,11 @@ func (wp *WorkerPool) PeriodicallyEnqueue(spec string, jobName string) *WorkerPo
 	return wp
 }
 
+// Started returns true if the worker pool has been started.
+func (wp *WorkerPool) Started() bool {
+	return wp.started
+}
+
 // Start starts the workers and associated processes.
 func (wp *WorkerPool) Start() {
 	if wp.started {

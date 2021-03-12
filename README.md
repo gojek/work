@@ -12,6 +12,8 @@ gocraft/work lets you enqueue and processes background jobs in Go. Jobs are dura
 * Periodically enqueue jobs on a cron-like schedule.
 * Pause / unpause jobs and control concurrency within and across processes
 
+--- 
+
 ## Fork - Important Changes
 
 #### Usage
@@ -42,12 +44,18 @@ in-progress queue was lost.
 #### Expose lock count & max concurrency for each job (#2)
 
 Added to the queue info accessible from 
-[`work.Client.Queues()`](https://pkg.go.dev/github.com/gojek/work#Client.Queues). Useful for alerting when lock count is
-consistently equal to the max concurrency possibly indicating that stale lock count is resulting in jobs not being
-picked up.
+[`work.Client.Queues()`](/client.go#L205-L212). Useful for alerting when lock count is consistently equal to the max 
+concurrency possibly indicating that stale lock count is resulting in jobs not being picked up.
 
 For the cleanup to be thorough, [`work.(*WorkerPool).Stop`](https://pkg.go.dev/github.com/gojek/work#WorkerPool.Stop) 
 would need to be called on each worker pool instance.
+
+#### Worker pool started check
+
+Expose [`work.(*WorkerPool).Started`](/worker_pool.go#L195-L198) which can be used to check if the worker pool has been
+started and is running.
+
+---
 
 ## Enqueue new jobs
 

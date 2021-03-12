@@ -84,6 +84,18 @@ func TestWorkerPoolStartStop(t *testing.T) {
 	wp.Stop()
 }
 
+func TestWorkerPoolStarted(t *testing.T) {
+	pool := newTestPool(t)
+	ns := "work"
+	wp := NewWorkerPool(TestContext{}, 10, ns, pool)
+
+	assert.False(t, wp.Started())
+	wp.Start()
+	assert.True(t, wp.Started())
+	wp.Stop()
+	assert.False(t, wp.Started())
+}
+
 func TestWorkerPoolValidations(t *testing.T) {
 	pool := newTestPool(t)
 	ns := "work"
