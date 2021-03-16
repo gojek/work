@@ -11,8 +11,8 @@ describe('Queues', () => {
 
     queues.setState({
       queues: [
-        {job_name: 'test', count: 1, latency: 0},
-        {job_name: 'test2', count: 2, latency: 0}
+        {job_name: 'test', count: 1, latency: 0, lock_count: 1, max_concurrency: 10},
+        {job_name: 'test2', count: 2, latency: 0, lock_count: 2, max_concurrency: 0}
       ]
     });
 

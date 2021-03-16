@@ -45,6 +45,8 @@ export default class Queues extends React.Component {
                 <th>Name</th>
                 <th>Count</th>
                 <th>Latency (seconds)</th>
+                <th>Lock Count</th>
+                <th>Max Concurrency</th>
               </tr>
               {
                 this.state.queues.map((queue) => {
@@ -53,6 +55,8 @@ export default class Queues extends React.Component {
                       <td>{queue.job_name}</td>
                       <td>{queue.count}</td>
                       <td>{queue.latency}</td>
+                      <td>{queue.lock_count}</td>
+                      <td>{queue.max_concurrency}</td>
                     </tr>
                   );
                 })
