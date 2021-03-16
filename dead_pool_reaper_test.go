@@ -334,7 +334,7 @@ func TestDeadPoolReaperCleanStaleLocks(t *testing.T) {
 
 	reaper := newDeadPoolReaper(ns, pool, jobNames)
 	// clean lock info for workerPoolID1
-	reaper.cleanStaleLockInfo(workerPoolID1, jobNames)
+	err = reaper.cleanStaleLockInfo(workerPoolID1, jobNames)
 	assert.NoError(t, err)
 	assert.EqualValues(t, 2, getInt64(pool, lock1))   // job1 lock should be decr by 1
 	assert.EqualValues(t, 1, getInt64(pool, lock2))   // job2 lock is unchanged
@@ -342,7 +342,7 @@ func TestDeadPoolReaperCleanStaleLocks(t *testing.T) {
 	assert.Nil(t, v)
 
 	// now clean lock info for workerPoolID2
-	reaper.cleanStaleLockInfo(workerPoolID2, jobNames)
+	err = reaper.cleanStaleLockInfo(workerPoolID2, jobNames)
 	assert.NoError(t, err)
 	// both locks should be at 0
 	assert.EqualValues(t, 0, getInt64(pool, lock1))

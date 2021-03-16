@@ -10,12 +10,12 @@ import (
 
 	"github.com/braintree/manners"
 	"github.com/gocraft/web"
-	"github.com/gocraft/work"
-	"github.com/gocraft/work/webui/internal/assets"
+	"github.com/gojek/work"
+	"github.com/gojek/work/webui/internal/assets"
 	"github.com/gomodule/redigo/redis"
 )
 
-// Server implements an HTTP server which exposes a JSON API to view and manage gocraft/work items.
+// Server implements an HTTP server which exposes a JSON API to view and manage gojek/work items.
 type Server struct {
 	namespace string
 	pool      *redis.Pool

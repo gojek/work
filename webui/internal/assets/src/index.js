@@ -18,7 +18,7 @@ class App extends React.Component {
   render() {
     return (
       <div className={styles.container} style={{marginTop: 30, marginBottom: 60}}>
-        <header><h1>gocraft/work</h1></header>
+        <header><h1>gojek/work</h1></header>
         <hr />
         <div className={styles.row}>
           <main className={styles.colMd10}>

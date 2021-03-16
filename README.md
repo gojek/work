@@ -1,6 +1,6 @@
-# gocraft/work [![PkgGoDev][pkg-go-dev-xgo-badge]][pkg-go-dev-xgo] [![build][github-workflow-badge]][github-workflow]
+# gojek/work [![PkgGoDev][pkg-go-dev-xgo-badge]][pkg-go-dev-xgo] [![build][github-workflow-badge]][github-workflow]
 
-gocraft/work lets you enqueue and processes background jobs in Go. Jobs are durable and backed by Redis. Very similar to Sidekiq for Go.
+gojek/work lets you enqueue and processes background jobs in Go. Jobs are durable and backed by Redis. Very similar to Sidekiq for Go.
 
 * Fast and efficient. Faster than [this](https://www.github.com/jrallison/go-workers), [this](https://www.github.com/benmanns/goworker), and [this](https://www.github.com/albrow/jobs). See below for benchmarks.
 * Reliable - don't lose jobs even if your process crashes.
@@ -18,10 +18,11 @@ gocraft/work lets you enqueue and processes background jobs in Go. Jobs are dura
 
 #### Usage
 
+The module is backward compatible with github.com/gocraft/work. To switch to this module, simply replace
+`github.com/gocraft/work` with `github.com/gojek/work` in Go source files and run `go get`:
+
 ```shell
-go get github.com/gocraft/work && \
-  go mod edit -replace github.com/gocraft/work=github.com/gojek/work@latest && \
-  go mod tidy
+go get github.com/gojek/work
 ```
 
 #### Refresh Node.js dependencies for WebUI (`99f237a`). 
@@ -44,15 +45,15 @@ in-progress queue was lost.
 #### Expose lock count & max concurrency for each job (#2)
 
 Added to the queue info accessible from 
-[`work.Client.Queues()`](/client.go#L205-L212). Useful for alerting when lock count is consistently equal to the max 
+[`work.Client.Queues()`](https://pkg.go.dev/github.com/gojek/work#Client.Queues). Useful for alerting when lock count is consistently equal to the max 
 concurrency possibly indicating that stale lock count is resulting in jobs not being picked up.
 
 For the cleanup to be thorough, [`work.(*WorkerPool).Stop`](https://pkg.go.dev/github.com/gojek/work#WorkerPool.Stop) 
 would need to be called on each worker pool instance.
 
-#### Worker pool started check
+#### Worker pool started check (#15)
 
-Expose [`work.(*WorkerPool).Started`](/worker_pool.go#L195-L198) which can be used to check if the worker pool has been
+Expose [`work.(*WorkerPool).Started`](https://pkg.go.dev/github.com/gojek/work#WorkerPool.Started) which can be used to check if the worker pool has been
 started and is running.
 
 ---
@@ -66,7 +67,7 @@ package main
 
 import (
 	"github.com/gomodule/redigo/redis"
-	"github.com/gocraft/work"
+	"github.com/gojek/work"
 )
 
 // Make a redis pool
@@ -102,7 +103,7 @@ package main
 
 import (
 	"github.com/gomodule/redigo/redis"
-	"github.com/gocraft/work"
+	"github.com/gojek/work"
 	"os"
 	"os/signal"
 )
@@ -188,7 +189,7 @@ func (c *Context) Export(job *work.Job) error {
 ```
 
 ## Redis Cluster
-If you're attempting to use gocraft/work on a `Redis Cluster` deployment, then you may encounter a `CROSSSLOT Keys in request don't hash to the same slot` error during the execution of the various lua scripts used to manage job data (see [Issue 93](https://github.com/gocraft/work/issues/93#issuecomment-401134340)). The current workaround is to force the keys for an entire `namespace` for a given worker pool on a single node in the cluster using [Redis Hash Tags](https://redis.io/topics/cluster-spec#keys-hash-tags). Using the example above:
+If you're attempting to use gojek/work on a `Redis Cluster` deployment, then you may encounter a `CROSSSLOT Keys in request don't hash to the same slot` error during the execution of the various lua scripts used to manage job data (see [Issue 93](https://github.com/gocraft/work/issues/93#issuecomment-401134340)). The current workaround is to force the keys for an entire `namespace` for a given worker pool on a single node in the cluster using [Redis Hash Tags](https://redis.io/topics/cluster-spec#keys-hash-tags). Using the example above:
 
 ```go
 func main() {
@@ -206,7 +207,7 @@ func main() {
 
 ### Contexts
 
-Just like in [gocraft/web](https://www.github.com/gocraft/web), gocraft/work lets you use your own contexts. Your context can be empty or it can have various fields in it. The fields can be whatever you want - it's your type! When a new job is processed by a worker, we'll allocate an instance of this struct and pass it to your middleware and handlers. This allows you to pass information from one middleware function to the next, and onto your handlers.
+Just like in [gocraft/web](https://www.github.com/gocraft/web), gojek/work lets you use your own contexts. Your context can be empty or it can have various fields in it. The fields can be whatever you want - it's your type! When a new job is processed by a worker, we'll allocate an instance of this struct and pass it to your middleware and handlers. This allows you to pass information from one middleware function to the next, and onto your handlers.
 
 Custom contexts aren't really needed for trivial example applications, but are very important for production apps. For instance, one field in your context can be your tagged logger. Your tagged logger augments your log statements with a job-id. This lets you filter your logs by that job-id.
 
@@ -222,7 +223,7 @@ func (c *Context) Export(job *work.Job) error {
 	for i, row := range rowsToExport {
 		exportRow(row)
 		if i % 1000 == 0 {
-			job.Checkin("i=" + fmt.Sprint(i))   // Here's the magic! This tells gocraft/work our status
+			job.Checkin("i=" + fmt.Sprint(i))   // Here's the magic! This tells gojek/work our status
 		}
 	}
 }
@@ -266,7 +267,7 @@ For information on how this map will be serialized to form a unique key, see (ht
 
 ### Periodic Enqueueing (Cron)
 
-You can periodically enqueue jobs on your gocraft/work cluster using your worker pool. The [scheduling specification](https://godoc.org/github.com/robfig/cron#hdr-CRON_Expression_Format) uses a Cron syntax where the fields represent seconds, minutes, hours, day of the month, month, and week of the day, respectively. Even if you have multiple worker pools on different machines, they'll all coordinate and only enqueue your job once.
+You can periodically enqueue jobs on your gojek/work cluster using your worker pool. The [scheduling specification](https://godoc.org/github.com/robfig/cron#hdr-CRON_Expression_Format) uses a Cron syntax where the fields represent seconds, minutes, hours, day of the month, month, and week of the day, respectively. Even if you have multiple worker pools on different machines, they'll all coordinate and only enqueue your job once.
 
 ```go
 pool := work.NewWorkerPool(Context{}, 10, "my_app_namespace", redisPool)
@@ -286,12 +287,12 @@ You can control job concurrency using `JobOptions{MaxConcurrency: <num>}`. Unlik
 
 ## Run the Web UI
 
-The web UI provides a view to view the state of your gocraft/work cluster, inspect queued jobs, and retry or delete dead jobs.
+The web UI provides a view to view the state of your gojek/work cluster, inspect queued jobs, and retry or delete dead jobs.
 
 Building an installing the binary:
 ```bash
-go get github.com/gocraft/work/cmd/workwebui
-go install github.com/gocraft/work/cmd/workwebui
+go get github.com/gojek/work/cmd/workwebui
+go install github.com/gojek/work/cmd/workwebui
 ```
 
 Then, you can run it:
@@ -332,7 +333,7 @@ You'll see a view that looks like this:
 
 ### Workers and WorkerPools
 
-* WorkerPools provide the public API of gocraft/work.
+* WorkerPools provide the public API of gojek/work.
   * You can attach jobs and middleware to them.
   * You can start and stop them.
   * Based on their concurrency setting, they'll spin up N worker goroutines.
