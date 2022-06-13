@@ -4,6 +4,7 @@ import PageList from './PageList';
 import UnixTime from './UnixTime';
 import styles from './bootstrap.min.css';
 import cx from './cx';
+import Args from './Args';
 
 export default class ScheduledJobs extends React.Component {
   static propTypes = {
@@ -59,7 +60,7 @@ export default class ScheduledJobs extends React.Component {
                   return (
                     <tr key={job.id}>
                       <td>{job.name}</td>
-                      <td>{JSON.stringify(job.args)}</td>
+                      <td><Args args={job.args}/></td>
                       <td><UnixTime ts={job.run_at} /></td>
                     </tr>
                   );

@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 import UnixTime from './UnixTime';
 import ShortList from './ShortList';
 import styles from './bootstrap.min.css';
+import Args from './Args';
 import cx from './cx';
 
 class BusyWorkers extends React.Component {
@@ -27,7 +28,7 @@ class BusyWorkers extends React.Component {
                 return (
                   <tr key={worker.worker_id}>
                     <td>{worker.job_name}</td>
-                    <td>{worker.args_json}</td>
+                    <td><Args args={JSON.parse(worker.args_json)}/></td>
                     <td><UnixTime ts={worker.started_at}/></td>
                     <td><UnixTime ts={worker.checkin_at}/></td>
                     <td>{worker.checkin}</td>

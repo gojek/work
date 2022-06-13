@@ -68,14 +68,22 @@ func NewServer(namespace string, pool *redis.Pool, hostPort string) *Server {
 	assetRouter := router.Subrouter(context{}, "")
 	assetRouter.Get("/", func(c *context, rw web.ResponseWriter, req *web.Request) {
 		rw.Header().Set("Content-Type", "text/html; charset=utf-8")
-		rw.Write(assets.MustAsset("index.html"))
+		rw.Write(mustAsset("index.html"))
 	})
 	assetRouter.Get("/work.js", func(c *context, rw web.ResponseWriter, req *web.Request) {
 		rw.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-		rw.Write(assets.MustAsset("work.js"))
+		rw.Write(mustAsset("work.js"))
 	})
 
 	return server
+}
+
+func mustAsset(name string) []byte {
+	b, err := assets.Asset(name)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }
 
 // Start starts the server listening for requests on the hostPort specified in NewServer.

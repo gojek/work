@@ -4,6 +4,7 @@ import PageList from './PageList';
 import UnixTime from './UnixTime';
 import styles from './bootstrap.min.css';
 import cx from './cx';
+import Args from './Args';
 
 export default class DeadJobs extends React.Component {
   static propTypes = {
@@ -144,7 +145,7 @@ export default class DeadJobs extends React.Component {
                       <tr key={job.id}>
                         <td><input type="checkbox" checked={this.checked(job)} onChange={() => this.check(job)}/></td>
                         <td>{job.name}</td>
-                        <td>{JSON.stringify(job.args)}</td>
+                        <td><Args args={job.args}/></td>
                         <td>{job.err}</td>
                         <td><UnixTime ts={job.t} /></td>
                       </tr>
