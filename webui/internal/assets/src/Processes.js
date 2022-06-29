@@ -11,6 +11,18 @@ class BusyWorkers extends React.Component {
     worker: PropTypes.arrayOf(PropTypes.object).isRequired,
   }
 
+  parseJson(input) {
+    if (input.length === 0) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(input);
+    } catch (e) {
+      return {parse_error: 'not a valid JSON', value: input};
+    }
+  }
+
   render() {
     return (
       <div className={styles.tableResponsive}>
@@ -28,7 +40,7 @@ class BusyWorkers extends React.Component {
                 return (
                   <tr key={worker.worker_id}>
                     <td>{worker.job_name}</td>
-                    <td><Args args={JSON.parse(worker.args_json)}/></td>
+                    <td><Args args={this.parseJson(worker.args_json)}/></td>
                     <td><UnixTime ts={worker.started_at}/></td>
                     <td><UnixTime ts={worker.checkin_at}/></td>
                     <td>{worker.checkin}</td>

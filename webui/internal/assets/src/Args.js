@@ -12,6 +12,12 @@ export default class Args extends React.Component {
   render() {
     let args = this.props.args;
 
+    if (args == null) {
+      return (
+        <span>null</span>
+      );
+    }
+
     // If object has base64 encoded JSON property named 'payload', try to unwrap it.
     if (args.hasOwnProperty('payload') && base64regex.test(args.payload)) {
       try {
