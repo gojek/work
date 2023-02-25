@@ -24,5 +24,5 @@ require (
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/stretchr/testify v1.5.1
 	github.com/youtube/vitess v2.1.1+incompatible // indirect
-	golang.org/x/net v0.0.0-20200425230154-ff2c4b7c35a0 // indirect
+	golang.org/x/net v0.7.0 // indirect
 )
