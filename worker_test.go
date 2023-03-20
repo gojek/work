@@ -9,6 +9,7 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gomodule/redigo/redis"
+	"github.com/rafaeljusto/redigomock"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -485,6 +486,21 @@ func newTestPool(t testing.TB) *redis.Pool {
 		},
 		Wait: true,
 	}
+}
+
+func newMockTestPool(t testing.TB) (*redis.Pool, *redigomock.Conn) {
+	t.Helper()
+
+	conn := redigomock.NewConn()
+	pool := &redis.Pool{
+		// Return the same connection mock for each Get() call.
+		Dial:        func() (redis.Conn, error) { return conn, nil },
+		MaxActive:   10,
+		MaxIdle:     10,
+		IdleTimeout: 240 * time.Second,
+		Wait:        true,
+	}
+	return pool, conn
 }
 
 func deleteQueue(pool *redis.Pool, namespace, jobName string) {
