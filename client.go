@@ -279,6 +279,9 @@ func (c *Client) Queues() ([]*Queue, error) {
 	for _, s := range queues {
 		if s.Count > 0 {
 			b, err := redis.Bytes(conn.Receive())
+			if err == redis.ErrNil {
+				continue
+			}
 			if err != nil {
 				logError("client.queues.receive2", err)
 				return nil, err
