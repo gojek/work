@@ -13,5 +13,5 @@ require (
 	github.com/garyburd/redigo v1.6.4 // indirect
 	github.com/golang/glog v1.1.2 // indirect
 	github.com/youtube/vitess v2.1.1+incompatible // indirect
-	golang.org/x/net v0.15.0 // indirect
+	golang.org/x/net v0.17.0 // indirect
 )
