@@ -1,7 +1,7 @@
 {
   "private": true,
   "scripts": {
-    "test": "mocha 'src/**/*.test.js' --require babel-register --require ignore-styles; exit 0",
+    "test": "mocha 'src/**/*.test.js' --require babel-register --require ignore-styles --exit; exit 0",
     "dev": "webpack --progress",
     "build": "webpack --progress --config webpack.production.config.js",
     "lint": "eslint src; exit 0",
