@@ -66,7 +66,7 @@ export default class Processes extends React.Component {
     workerPool: []
   }
 
-  componentWillMount() {
+  componentDidMount() {
     if (this.props.busyWorkerURL) {
       fetch(this.props.busyWorkerURL).
         then((resp) => resp.json()).

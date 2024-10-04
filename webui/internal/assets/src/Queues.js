@@ -12,7 +12,7 @@ export default class Queues extends React.Component {
     queues: []
   }
 
-  componentWillMount() {
+  componentDidMount() {
     if (!this.props.url) {
       return;
     }

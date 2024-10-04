@@ -31,7 +31,7 @@ export default class RetryJobs extends React.Component {
       });
   }
 
-  componentWillMount() {
+  componentDidMount() {
     this.fetch();
   }
 

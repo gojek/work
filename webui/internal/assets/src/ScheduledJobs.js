@@ -31,7 +31,7 @@ export default class ScheduledJobs extends React.Component {
       });
   }
 
-  componentWillMount() {
+  componentDidMount() {
     this.fetch();
   }
 

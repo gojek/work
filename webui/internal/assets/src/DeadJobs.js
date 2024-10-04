@@ -37,7 +37,7 @@ export default class DeadJobs extends React.Component {
       });
   }
 
-  componentWillMount() {
+  componentDidMount() {
     this.fetch();
   }
 
