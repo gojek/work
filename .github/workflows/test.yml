@@ -15,15 +15,17 @@ jobs:
         go-version: [1.22.x, 1.23.x]
     steps:
       - name: Install Go@v${{ matrix.go-version }}
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v4
         with:
           go-version: ${{ matrix.go-version }}
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       # See https://github.com/actions/cache/blob/master/examples.md#go---modules
-      - uses: actions/cache@v2
+      - uses: actions/cache@v3
         with:
-          path: ~/go/pkg/mod
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
@@ -38,16 +40,16 @@ jobs:
     # See https://docs.github.com/en/actions/guides/building-and-testing-nodejs
     steps:
       - name: Install Node.js
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v4
         with:
           node-version: '20.x'
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       # See https://github.com/actions/cache/blob/master/examples.md#node---yarn
       - name: Get yarn cache directory path
         id: yarn-cache-dir-path
         run: echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
-      - uses: actions/cache@v2
+      - uses: actions/cache@v3
         id: yarn-cache # use this to check for `cache-hit` (`steps.yarn-cache.outputs.cache-hit != 'true'`)
         with:
           path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
