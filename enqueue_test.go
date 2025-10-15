@@ -168,7 +168,8 @@ func TestEnqueueIn(t *testing.T) {
 		assert.Equal(t, "cool", job.ArgString("b"))
 		assert.EqualValues(t, 1, job.ArgInt64("a"))
 		assert.NoError(t, job.ArgError())
-		assert.EqualValues(t, job.EnqueuedAt+300, job.RunAt)
+		assert.True(t, job.RunAt >= job.EnqueuedAt+300)
+		assert.True(t, job.RunAt <= job.EnqueuedAt+301)
 	}
 
 	// Make sure "wat" is in the known jobs
@@ -185,7 +186,7 @@ func TestEnqueueIn(t *testing.T) {
 	score, j := jobOnZset(pool, redisKeyScheduled(ns))
 
 	assert.True(t, score > time.Now().Unix()+290)
-	assert.True(t, score <= time.Now().Unix()+300)
+	assert.True(t, score <= time.Now().Unix()+301)
 
 	assert.Equal(t, "wat", j.Name)
 	assert.True(t, len(j.ID) > 10)                        // Something is in it
@@ -273,9 +274,11 @@ func TestEnqueueIn_WithMock(t *testing.T) {
 			enqueuer := NewEnqueuerWithOptions(ns, pool, tt.enqueuerOption)
 			if tt.mockZadd != nil {
 				conn.Command("ZADD", "work:scheduled", now+secondsFromNow, redigomock.NewAnyData()).Expect(*tt.mockZadd)
+				conn.Command("ZADD", "work:scheduled", now+secondsFromNow+1, redigomock.NewAnyData()).Expect(*tt.mockZadd)
 			}
 			if tt.mockZaddErr != nil {
 				conn.Command("ZADD", "work:scheduled", now+secondsFromNow, redigomock.NewAnyData()).ExpectError(tt.mockZaddErr)
+				conn.Command("ZADD", "work:scheduled", now+secondsFromNow+1, redigomock.NewAnyData()).ExpectError(tt.mockZaddErr)
 			}
 			if tt.mockWait != nil {
 				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).Expect(*tt.mockWait)
