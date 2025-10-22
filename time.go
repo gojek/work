@@ -19,7 +19,13 @@ func resetNowEpochSecondsMock() {
 	nowMock = 0
 }
 
-// convert epoch seconds to a time
-func epochSecondsToTime(t int64) time.Time {
-	return time.Time{}
+func epochAfterSeconds(seconds int64) int64 {
+	if nowMock != 0 {
+		return nowMock + seconds
+	}
+	t := time.Now().Add(time.Second * time.Duration(seconds))
+	if t.Nanosecond() > 0 {
+		t = t.Add(time.Second)
+	}
+	return t.Unix()
 }

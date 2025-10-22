@@ -97,15 +97,10 @@ func (e *Enqueuer) EnqueueIn(jobName string, secondsFromNow int64, args map[stri
 	conn := e.Pool.Get()
 	defer conn.Close()
 
-	now := time.Now()
-	// If there are any milliseconds, round up to next second
-	secondsToAdd := secondsFromNow
-	if now.Nanosecond() > 0 {
-		secondsToAdd++ // Add one extra second to compensate
-	}
+	secondsToAdd := epochAfterSeconds(secondsFromNow)
 
 	scheduledJob := &ScheduledJob{
-		RunAt: now.Unix() + secondsToAdd,
+		RunAt: secondsToAdd,
 		Job:   job,
 	}
 
