@@ -116,6 +116,41 @@ func (e *Enqueuer) EnqueueIn(jobName string, secondsFromNow int64, args map[stri
 	return scheduledJob, nil
 }
 
+func (e *Enqueuer) EnqueueAt(jobName string, epochSeconds int64, args map[string]interface{}) (*ScheduledJob, error) {
+	job := &Job{
+		Name:       jobName,
+		ID:         makeIdentifier(),
+		EnqueuedAt: nowEpochSeconds(),
+		Args:       args,
+	}
+	if epochSeconds < job.EnqueuedAt {
+		return nil, errors.New("epochSeconds must be a greater value than current time")
+	}
+	rawJSON, err := job.serialize()
+	if err != nil {
+		return nil, err
+	}
+
+	conn := e.Pool.Get()
+	defer conn.Close()
+
+	scheduledJob := &ScheduledJob{
+		RunAt: epochSeconds,
+		Job:   job,
+	}
+
+	_, err = e.redisDoHelper(conn, "ZADD", redisKeyScheduled(e.Namespace), scheduledJob.RunAt, rawJSON)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := e.addToKnownJobs(conn, jobName); err != nil {
+		return scheduledJob, err
+	}
+
+	return scheduledJob, nil
+}
+
 // EnqueueUnique enqueues a job unless a job is already enqueued with the same name and arguments.
 // The already-enqueued job can be in the normal work queue or in the scheduled job queue.
 // Once a worker begins processing a job, another job with the same name and arguments can be enqueued again.
