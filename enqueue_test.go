@@ -616,7 +616,8 @@ func TestEnqueueUniqueIn(t *testing.T) {
 		assert.Equal(t, "cool", job.ArgString("b"))
 		assert.EqualValues(t, 1, job.ArgInt64("a"))
 		assert.NoError(t, job.ArgError())
-		assert.EqualValues(t, job.EnqueuedAt+300, job.RunAt)
+		assert.True(t, job.RunAt >= job.EnqueuedAt+300)
+		assert.True(t, job.RunAt <= job.EnqueuedAt+301)
 	}
 
 	job, err = enqueuer.EnqueueUniqueIn("wat", 10, Q{"a": 1, "b": "cool"})
@@ -627,7 +628,7 @@ func TestEnqueueUniqueIn(t *testing.T) {
 	score, j := jobOnZset(pool, redisKeyScheduled(ns))
 
 	assert.True(t, score > time.Now().Unix()+290) // We don't want to overwrite the time
-	assert.True(t, score <= time.Now().Unix()+300)
+	assert.True(t, score <= time.Now().Unix()+301)
 
 	assert.Equal(t, "wat", j.Name)
 	assert.True(t, len(j.ID) > 10)                        // Something is in it
@@ -960,7 +961,8 @@ func TestEnqueueUniqueInByKey(t *testing.T) {
 		assert.Equal(t, "cool", job.ArgString("b"))
 		assert.EqualValues(t, 1, job.ArgInt64("a"))
 		assert.NoError(t, job.ArgError())
-		assert.EqualValues(t, job.EnqueuedAt+300, job.RunAt)
+		assert.True(t, job.RunAt >= job.EnqueuedAt+300)
+		assert.True(t, job.RunAt <= job.EnqueuedAt+301)
 	}
 
 	job, err = enqueuer.EnqueueUniqueInByKey("wat", 10, Q{"a": 1, "b": "cool"}, Q{"key": "123"})
@@ -971,7 +973,7 @@ func TestEnqueueUniqueInByKey(t *testing.T) {
 	score, j := jobOnZset(pool, redisKeyScheduled(ns))
 
 	assert.True(t, score > time.Now().Unix()+290) // We don't want to overwrite the time
-	assert.True(t, score <= time.Now().Unix()+300)
+	assert.True(t, score <= time.Now().Unix()+301)
 
 	assert.Equal(t, "wat", j.Name)
 	assert.True(t, len(j.ID) > 10)                        // Something is in it

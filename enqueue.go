@@ -195,7 +195,7 @@ func (e *Enqueuer) EnqueueUniqueInByKey(jobName string, secondsFromNow int64, ar
 	}
 
 	scheduledJob := &ScheduledJob{
-		RunAt: nowEpochSeconds() + secondsFromNow,
+		RunAt: epochAfterSeconds(secondsFromNow),
 		Job:   job,
 	}
 
