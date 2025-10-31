@@ -124,7 +124,7 @@ func (e *Enqueuer) EnqueueAt(jobName string, epochSeconds int64, args map[string
 		Args:       args,
 	}
 	if epochSeconds < job.EnqueuedAt {
-		return nil, errors.New("epochSeconds must be a greater value than current time")
+		epochSeconds = job.EnqueuedAt + 1
 	}
 	rawJSON, err := job.serialize()
 	if err != nil {
