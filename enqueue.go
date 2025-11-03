@@ -206,6 +206,33 @@ func (e *Enqueuer) EnqueueUniqueInByKey(jobName string, secondsFromNow int64, ar
 	return nil, err
 }
 
+// EnqueueUniqueAt enqueues a unique job at the specified absolute epoch time in seconds. See EnqueueUnique for semantics of unique jobs.
+func (e *Enqueuer) EnqueueUniqueAt(jobName string, epochSeconds int64, args map[string]interface{}) (*ScheduledJob, error) {
+	return e.EnqueueUniqueAtByKey(jobName, epochSeconds, args, nil)
+}
+
+// EnqueueUniqueAtByKey enqueues a job unique on specified key at the specified absolute epoch time in seconds, updating arguments. See EnqueueUnique for semantics of unique jobs.
+func (e *Enqueuer) EnqueueUniqueAtByKey(jobName string, epochSeconds int64, args map[string]interface{}, keyMap map[string]interface{}) (*ScheduledJob, error) {
+	enqueue, job, err := e.uniqueJobHelper(jobName, args, keyMap)
+	if err != nil {
+		return nil, err
+	}
+	if epochSeconds < job.EnqueuedAt {
+		epochSeconds = job.EnqueuedAt + 1
+	}
+
+	scheduledJob := &ScheduledJob{
+		RunAt: epochSeconds,
+		Job:   job,
+	}
+
+	res, err := enqueue(&scheduledJob.RunAt)
+	if res == "ok" && err == nil {
+		return scheduledJob, nil
+	}
+	return nil, err
+}
+
 func (e *Enqueuer) addToKnownJobs(conn redis.Conn, jobName string) error {
 	needSadd := true
 	now := time.Now().Unix()
