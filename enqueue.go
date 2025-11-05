@@ -123,9 +123,6 @@ func (e *Enqueuer) EnqueueAt(jobName string, epochSeconds int64, args map[string
 		EnqueuedAt: nowEpochSeconds(),
 		Args:       args,
 	}
-	if epochSeconds < job.EnqueuedAt {
-		epochSeconds = job.EnqueuedAt + 1
-	}
 	rawJSON, err := job.serialize()
 	if err != nil {
 		return nil, err
@@ -216,9 +213,6 @@ func (e *Enqueuer) EnqueueUniqueAtByKey(jobName string, epochSeconds int64, args
 	enqueue, job, err := e.uniqueJobHelper(jobName, args, keyMap)
 	if err != nil {
 		return nil, err
-	}
-	if epochSeconds < job.EnqueuedAt {
-		epochSeconds = job.EnqueuedAt + 1
 	}
 
 	scheduledJob := &ScheduledJob{
