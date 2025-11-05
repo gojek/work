@@ -2,12 +2,14 @@ package work
 
 import (
 	"fmt"
+	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestPrioritySampler(t *testing.T) {
+	rand.Seed(1)
 	ps := prioritySampler{}
 
 	ps.add(5, "jobs.5", "jobsinprog.5", "jobspaused.5", "jobslock.5", "jobslockinfo.5", "jobsconcurrency.5")

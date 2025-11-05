@@ -760,6 +760,90 @@ func TestEnqueueUniqueIn_WithMock(t *testing.T) {
 	}
 }
 
+func TestEnqueueUniqueByKey(t *testing.T) {
+	var arg3 string
+	var arg4 string
+
+	pool := newTestPool(t)
+	ns := "work"
+	cleanKeyspace(ns, pool)
+	enqueuer := NewEnqueuer(ns, pool)
+	var mutex = &sync.Mutex{}
+	job, err := enqueuer.EnqueueUniqueByKey("wat", Q{"a": 3, "b": "foo"}, Q{"key": "123"})
+	assert.NoError(t, err)
+	if assert.NotNil(t, job) {
+		assert.Equal(t, "wat", job.Name)
+		assert.True(t, len(job.ID) > 10)                        // Something is in it
+		assert.True(t, job.EnqueuedAt > (time.Now().Unix()-10)) // Within 10 seconds
+		assert.True(t, job.EnqueuedAt < (time.Now().Unix()+10)) // Within 10 seconds
+		assert.Equal(t, "foo", job.ArgString("b"))
+		assert.EqualValues(t, 3, job.ArgInt64("a"))
+		assert.NoError(t, job.ArgError())
+	}
+
+	job, err = enqueuer.EnqueueUniqueByKey("wat", Q{"a": 3, "b": "bar"}, Q{"key": "123"})
+	assert.NoError(t, err)
+	assert.Nil(t, job)
+
+	job, err = enqueuer.EnqueueUniqueByKey("wat", Q{"a": 4, "b": "baz"}, Q{"key": "124"})
+	assert.NoError(t, err)
+	assert.NotNil(t, job)
+
+	job, err = enqueuer.EnqueueUniqueByKey("taw", nil, Q{"key": "125"})
+	assert.NoError(t, err)
+	assert.NotNil(t, job)
+
+	// Process the queues. Ensure the right number of jobs were processed
+	var wats, taws int64
+	wp := NewWorkerPool(TestContext{}, 3, ns, pool)
+	wp.JobWithOptions("wat", JobOptions{Priority: 1, MaxFails: 1}, func(job *Job) error {
+		mutex.Lock()
+		argA := job.Args["a"].(float64)
+		argB := job.Args["b"].(string)
+		if argA == 3 {
+			arg3 = argB
+		}
+		if argA == 4 {
+			arg4 = argB
+		}
+
+		wats++
+		mutex.Unlock()
+		return nil
+	})
+	wp.JobWithOptions("taw", JobOptions{Priority: 1, MaxFails: 1}, func(job *Job) error {
+		mutex.Lock()
+		taws++
+		mutex.Unlock()
+		return fmt.Errorf("ohno")
+	})
+	wp.Start()
+	wp.Drain()
+	wp.Stop()
+
+	assert.EqualValues(t, 2, wats)
+	assert.EqualValues(t, 1, taws)
+
+	// Check that arguments got updated to new value
+	assert.EqualValues(t, "bar", arg3)
+	assert.EqualValues(t, "baz", arg4)
+
+	// Enqueue again. Ensure we can.
+	job, err = enqueuer.EnqueueUniqueByKey("wat", Q{"a": 1, "b": "cool"}, Q{"key": "123"})
+	assert.NoError(t, err)
+	assert.NotNil(t, job)
+
+	job, err = enqueuer.EnqueueUniqueByKey("wat", Q{"a": 1, "b": "coolio"}, Q{"key": "124"})
+	assert.NoError(t, err)
+	assert.NotNil(t, job)
+
+	// Even though taw resulted in an error, we should still be able to re-queue it.
+	// This could result in multiple taws enqueued at the same time in a production system.
+	job, err = enqueuer.EnqueueUniqueByKey("taw", nil, Q{"key": "123"})
+	assert.NoError(t, err)
+	assert.NotNil(t, job)
+}
+
 func TestEnqueueUniqueAt(t *testing.T) {
 	pool := newTestPool(t)
 	ns := "work"
