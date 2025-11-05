@@ -844,6 +844,106 @@ func TestEnqueueUniqueByKey(t *testing.T) {
 	assert.NotNil(t, job)
 }
 
+func TestEnqueueUniqueByKey_WithMock(t *testing.T) {
+	ns := "work"
+	jobName := "test"
+	jobArgs := map[string]interface{}{"arg": "value"}
+	jobKeyMap := map[string]interface{}{"key": "value"}
+
+	ok := "ok"
+	dup := "ok"
+	var cases = []struct {
+		name            string
+		enqueuerOption  EnqueuerOption
+		mockLEvalsha    *string
+		mockLEvalshaErr error
+		mockWait        *int64
+		mockWaitErr     error
+
+		expectedError error
+	}{
+		{
+			name:         "Success without wait",
+			mockLEvalsha: &ok,
+		}, {
+			name:         "Duplicate without wait",
+			mockLEvalsha: &dup,
+		}, {
+			name:            "Failure without wait",
+			mockLEvalshaErr: errors.New("lpush failure"),
+			expectedError:   errors.New("lpush failure"),
+		}, {
+			name: "Failure with wait",
+			enqueuerOption: EnqueuerOption{
+				MinWaitReplicas:  2,
+				MaxWaitTimeoutMS: 1000,
+			},
+			mockLEvalsha:  &ok,
+			mockWaitErr:   errors.New("wait failure"),
+			expectedError: errors.New("wait failure"),
+		}, {
+			name: "When wait return zero",
+			enqueuerOption: EnqueuerOption{
+				MinWaitReplicas:  2,
+				MaxWaitTimeoutMS: 1000,
+			},
+			mockLEvalsha:  &dup,
+			mockWait:      &zero,
+			expectedError: ErrReplicationFailed,
+		}, {
+			name: "When wait return less than MinWaitReplicas",
+			enqueuerOption: EnqueuerOption{
+				MinWaitReplicas:  2,
+				MaxWaitTimeoutMS: 1000,
+			},
+			mockLEvalsha:  &ok,
+			mockWait:      &one,
+			expectedError: ErrReplicationFailed,
+		}, {
+			name: "When wait return same as MinWaitReplicas",
+			enqueuerOption: EnqueuerOption{
+				MinWaitReplicas:  2,
+				MaxWaitTimeoutMS: 1000,
+			},
+			mockLEvalsha: &dup,
+			mockWait:     &two,
+		}, {
+			name: "When wait return more than MinWaitReplicas",
+			enqueuerOption: EnqueuerOption{
+				MinWaitReplicas:  2,
+				MaxWaitTimeoutMS: 1000,
+			},
+			mockLEvalsha: &ok,
+			mockWait:     &three,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			pool, conn := newMockTestPool(t)
+			enqueuer := NewEnqueuerWithOptions(ns, pool, tt.enqueuerOption)
+			uniqueKey := `work:unique:test:{"key":"value"}
+`
+			if tt.mockLEvalsha != nil {
+				conn.Command("EVALSHA", "f38b6aef74017e799294b1ec4b74eb707deb0c17", 2, "work:jobs:test", uniqueKey, redigomock.NewAnyData(), redigomock.NewAnyData()).Expect(*tt.mockLEvalsha)
+			}
+			if tt.mockLEvalshaErr != nil {
+				conn.Command("EVALSHA", "f38b6aef74017e799294b1ec4b74eb707deb0c17", 2, "work:jobs:test", uniqueKey, redigomock.NewAnyData(), redigomock.NewAnyData()).ExpectError(tt.mockLEvalshaErr)
+			}
+			if tt.mockWait != nil {
+				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).Expect(*tt.mockWait)
+			}
+			if tt.mockWaitErr != nil {
+				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).ExpectError(tt.mockWaitErr)
+			}
+			conn.Command("SADD", "work:known_jobs", jobName).Expect(1)
+
+			_, err := enqueuer.EnqueueUniqueByKey(jobName, jobArgs, jobKeyMap)
+			assert.Equal(t, tt.expectedError, err)
+		})
+	}
+}
+
 func TestEnqueueUniqueAt(t *testing.T) {
 	pool := newTestPool(t)
 	ns := "work"
