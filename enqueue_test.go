@@ -168,7 +168,8 @@ func TestEnqueueIn(t *testing.T) {
 		assert.Equal(t, "cool", job.ArgString("b"))
 		assert.EqualValues(t, 1, job.ArgInt64("a"))
 		assert.NoError(t, job.ArgError())
-		assert.EqualValues(t, job.EnqueuedAt+300, job.RunAt)
+		assert.True(t, job.RunAt >= job.EnqueuedAt+300)
+		assert.True(t, job.RunAt <= job.EnqueuedAt+301)
 	}
 
 	// Make sure "wat" is in the known jobs
@@ -185,7 +186,7 @@ func TestEnqueueIn(t *testing.T) {
 	score, j := jobOnZset(pool, redisKeyScheduled(ns))
 
 	assert.True(t, score > time.Now().Unix()+290)
-	assert.True(t, score <= time.Now().Unix()+300)
+	assert.True(t, score <= time.Now().Unix()+301)
 
 	assert.Equal(t, "wat", j.Name)
 	assert.True(t, len(j.ID) > 10)                        // Something is in it
@@ -273,9 +274,11 @@ func TestEnqueueIn_WithMock(t *testing.T) {
 			enqueuer := NewEnqueuerWithOptions(ns, pool, tt.enqueuerOption)
 			if tt.mockZadd != nil {
 				conn.Command("ZADD", "work:scheduled", now+secondsFromNow, redigomock.NewAnyData()).Expect(*tt.mockZadd)
+				conn.Command("ZADD", "work:scheduled", now+secondsFromNow+1, redigomock.NewAnyData()).Expect(*tt.mockZadd)
 			}
 			if tt.mockZaddErr != nil {
 				conn.Command("ZADD", "work:scheduled", now+secondsFromNow, redigomock.NewAnyData()).ExpectError(tt.mockZaddErr)
+				conn.Command("ZADD", "work:scheduled", now+secondsFromNow+1, redigomock.NewAnyData()).ExpectError(tt.mockZaddErr)
 			}
 			if tt.mockWait != nil {
 				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).Expect(*tt.mockWait)
@@ -286,6 +289,136 @@ func TestEnqueueIn_WithMock(t *testing.T) {
 			conn.Command("SADD", "work:known_jobs", jobName).Expect(1)
 
 			_, err := enqueuer.EnqueueIn(jobName, secondsFromNow, jobArgs)
+			assert.Equal(t, tt.expectedError, err)
+		})
+	}
+}
+
+func TestEnqueueAt(t *testing.T) {
+	pool := newTestPool(t)
+	ns := "work"
+	cleanKeyspace(ns, pool)
+	enqueuer := NewEnqueuer(ns, pool)
+
+	now := time.Now().Unix()
+	runAt := now + 300
+
+	job, err := enqueuer.EnqueueAt("wat", runAt, Q{"a": 1, "b": "cool"})
+	assert.Nil(t, err)
+	if assert.NotNil(t, job) {
+		assert.Equal(t, "wat", job.Name)
+		assert.True(t, len(job.ID) > 10)
+		assert.True(t, job.EnqueuedAt >= now)
+		assert.Equal(t, "cool", job.ArgString("b"))
+		assert.EqualValues(t, 1, job.ArgInt64("a"))
+		assert.NoError(t, job.ArgError())
+		assert.EqualValues(t, runAt, job.RunAt)
+	}
+
+	assert.EqualValues(t, []string{"wat"}, knownJobs(pool, redisKeyKnownJobs(ns)))
+	expiresAt := enqueuer.knownJobs["wat"]
+	assert.True(t, expiresAt > (time.Now().Unix()+290))
+	assert.EqualValues(t, 1, zsetSize(pool, redisKeyScheduled(ns)))
+
+	score, j := jobOnZset(pool, redisKeyScheduled(ns))
+	assert.EqualValues(t, runAt, score)
+	assert.Equal(t, "wat", j.Name)
+	assert.True(t, len(j.ID) > 10)
+	assert.Equal(t, "cool", j.ArgString("b"))
+	assert.EqualValues(t, 1, j.ArgInt64("a"))
+	assert.NoError(t, j.ArgError())
+}
+
+func TestEnqueueAt_WithMock(t *testing.T) {
+	ns := "work"
+	jobName := "test"
+	jobArgs := map[string]interface{}{"arg": "value"}
+	now := time.Now().Unix()
+	runAt := now + 100
+	setNowEpochSecondsMock(now)
+	defer resetNowEpochSecondsMock()
+
+	var cases = []struct {
+		name           string
+		enqueuerOption EnqueuerOption
+		mockZadd       *int64
+		mockZaddErr    error
+		mockWait       *int64
+		mockWaitErr    error
+		expectedError  error
+	}{
+		{
+			name:     "Success without wait",
+			mockZadd: &one,
+		}, {
+			name:          "Failure without wait",
+			mockZaddErr:   errors.New("zadd failure"),
+			expectedError: errors.New("zadd failure"),
+		}, {
+			name: "Failure with wait",
+			enqueuerOption: EnqueuerOption{
+				MinWaitReplicas:  2,
+				MaxWaitTimeoutMS: 1000,
+			},
+			mockZadd:      &one,
+			mockWaitErr:   errors.New("wait failure"),
+			expectedError: errors.New("wait failure"),
+		}, {
+			name: "When wait return zero",
+			enqueuerOption: EnqueuerOption{
+				MinWaitReplicas:  2,
+				MaxWaitTimeoutMS: 1000,
+			},
+			mockZadd:      &one,
+			mockWait:      &zero,
+			expectedError: ErrReplicationFailed,
+		}, {
+			name: "When wait return less than MinWaitReplicas",
+			enqueuerOption: EnqueuerOption{
+				MinWaitReplicas:  2,
+				MaxWaitTimeoutMS: 1000,
+			},
+			mockZadd:      &one,
+			mockWait:      &one,
+			expectedError: ErrReplicationFailed,
+		}, {
+			name: "When wait return same as MinWaitReplicas",
+			enqueuerOption: EnqueuerOption{
+				MinWaitReplicas:  2,
+				MaxWaitTimeoutMS: 1000,
+			},
+			mockZadd: &one,
+			mockWait: &two,
+		}, {
+			name: "When wait return more than MinWaitReplicas",
+			enqueuerOption: EnqueuerOption{
+				MinWaitReplicas:  2,
+				MaxWaitTimeoutMS: 1000,
+			},
+			mockZadd: &one,
+			mockWait: &three,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			pool, conn := newMockTestPool(t)
+			enqueuer := NewEnqueuerWithOptions(ns, pool, tt.enqueuerOption)
+			if tt.mockZadd != nil {
+				conn.Command("ZADD", "work:scheduled", runAt, redigomock.NewAnyData()).Expect(*tt.mockZadd)
+			}
+			if tt.mockZaddErr != nil {
+				conn.Command("ZADD", "work:scheduled", runAt, redigomock.NewAnyData()).ExpectError(tt.mockZaddErr)
+			}
+			if tt.mockWait != nil {
+				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).Expect(*tt.mockWait)
+			}
+			if tt.mockWaitErr != nil {
+				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).ExpectError(tt.mockWaitErr)
+			}
+			conn.Command("SADD", "work:known_jobs", jobName).Expect(1)
+
+			_, err := enqueuer.EnqueueAt(jobName, runAt, jobArgs)
 			assert.Equal(t, tt.expectedError, err)
 		})
 	}
@@ -483,7 +616,8 @@ func TestEnqueueUniqueIn(t *testing.T) {
 		assert.Equal(t, "cool", job.ArgString("b"))
 		assert.EqualValues(t, 1, job.ArgInt64("a"))
 		assert.NoError(t, job.ArgError())
-		assert.EqualValues(t, job.EnqueuedAt+300, job.RunAt)
+		assert.True(t, job.RunAt >= job.EnqueuedAt+300)
+		assert.True(t, job.RunAt <= job.EnqueuedAt+301)
 	}
 
 	job, err = enqueuer.EnqueueUniqueIn("wat", 10, Q{"a": 1, "b": "cool"})
@@ -494,7 +628,7 @@ func TestEnqueueUniqueIn(t *testing.T) {
 	score, j := jobOnZset(pool, redisKeyScheduled(ns))
 
 	assert.True(t, score > time.Now().Unix()+290) // We don't want to overwrite the time
-	assert.True(t, score <= time.Now().Unix()+300)
+	assert.True(t, score <= time.Now().Unix()+301)
 
 	assert.Equal(t, "wat", j.Name)
 	assert.True(t, len(j.ID) > 10)                        // Something is in it
@@ -810,6 +944,123 @@ func TestEnqueueUniqueByKey_WithMock(t *testing.T) {
 	}
 }
 
+func TestEnqueueUniqueAt(t *testing.T) {
+	pool := newTestPool(t)
+	ns := "work"
+	cleanKeyspace(ns, pool)
+	enqueuer := NewEnqueuer(ns, pool)
+
+	now := time.Now().Unix()
+	runAt := now + 300
+
+	job, err := enqueuer.EnqueueUniqueAt("wat", runAt, Q{"a": 1, "b": "cool"})
+	assert.NoError(t, err)
+	if assert.NotNil(t, job) {
+		assert.Equal(t, "wat", job.Name)
+		assert.True(t, len(job.ID) > 10)
+		assert.True(t, job.EnqueuedAt >= now)
+		assert.Equal(t, "cool", job.ArgString("b"))
+		assert.EqualValues(t, 1, job.ArgInt64("a"))
+		assert.NoError(t, job.ArgError())
+		assert.EqualValues(t, runAt, job.RunAt)
+	}
+
+	job, err = enqueuer.EnqueueUniqueAt("wat", runAt-200, Q{"a": 1, "b": "cool"})
+	assert.NoError(t, err)
+	assert.Nil(t, job)
+
+	score, j := jobOnZset(pool, redisKeyScheduled(ns))
+	assert.EqualValues(t, runAt, score)
+	assert.Equal(t, "wat", j.Name)
+	assert.True(t, j.Unique)
+
+	job, err = enqueuer.EnqueueUniqueAt("wat", runAt+600, Q{"a": 1, "b": "coolio"})
+	assert.NoError(t, err)
+	assert.NotNil(t, job)
+}
+
+func TestEnqueueUniqueAt_WithMock(t *testing.T) {
+	ns := "work"
+	jobName := "test"
+	jobArgs := map[string]interface{}{"arg": "value"}
+
+	runAt := time.Now().Unix() + 100
+
+	ok := "ok"
+	dup := "ok"
+	var cases = []struct {
+		name            string
+		enqueuerOption  EnqueuerOption
+		mockLEvalsha    *string
+		mockLEvalshaErr error
+		mockWait        *int64
+		mockWaitErr     error
+		expectedError   error
+	}{
+		{name: "Success without wait", mockLEvalsha: &ok},
+		{name: "Duplicate without wait", mockLEvalsha: &dup},
+		{name: "Failure without wait", mockLEvalshaErr: errors.New("lpush failure"), expectedError: errors.New("lpush failure")},
+		{
+			name:           "Failure with wait",
+			enqueuerOption: EnqueuerOption{MinWaitReplicas: 2, MaxWaitTimeoutMS: 1000},
+			mockLEvalsha:   &ok,
+			mockWaitErr:    errors.New("wait failure"),
+			expectedError:  errors.New("wait failure"),
+		},
+		{
+			name:           "When wait return zero",
+			enqueuerOption: EnqueuerOption{MinWaitReplicas: 2, MaxWaitTimeoutMS: 1000},
+			mockLEvalsha:   &dup,
+			mockWait:       &zero,
+			expectedError:  ErrReplicationFailed,
+		},
+		{
+			name:           "When wait return less than MinWaitReplicas",
+			enqueuerOption: EnqueuerOption{MinWaitReplicas: 2, MaxWaitTimeoutMS: 1000},
+			mockLEvalsha:   &ok,
+			mockWait:       &one,
+			expectedError:  ErrReplicationFailed,
+		},
+		{
+			name:           "When wait return same as MinWaitReplicas",
+			enqueuerOption: EnqueuerOption{MinWaitReplicas: 2, MaxWaitTimeoutMS: 1000},
+			mockLEvalsha:   &dup,
+			mockWait:       &two,
+		},
+		{
+			name:           "When wait return more than MinWaitReplicas",
+			enqueuerOption: EnqueuerOption{MinWaitReplicas: 2, MaxWaitTimeoutMS: 1000},
+			mockLEvalsha:   &ok,
+			mockWait:       &three,
+		},
+	}
+
+	for _, tt := range cases {
+		// uniqueKey same as EnqueueUnique test (args based)
+		uniqueKey := "work:unique:test:{\"arg\":\"value\"}\n"
+		t.Run(tt.name, func(t *testing.T) {
+			pool, conn := newMockTestPool(t)
+			enqueuer := NewEnqueuerWithOptions(ns, pool, tt.enqueuerOption)
+			if tt.mockLEvalsha != nil {
+				conn.Command("EVALSHA", "7b32230026d2ba0d5aa0b5451237f6c086e3072c", 2, "work:scheduled", uniqueKey, redigomock.NewAnyData(), "1", runAt).Expect(*tt.mockLEvalsha)
+			}
+			if tt.mockLEvalshaErr != nil {
+				conn.Command("EVALSHA", "7b32230026d2ba0d5aa0b5451237f6c086e3072c", 2, "work:scheduled", uniqueKey, redigomock.NewAnyData(), "1", runAt).ExpectError(tt.mockLEvalshaErr)
+			}
+			if tt.mockWait != nil {
+				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).Expect(*tt.mockWait)
+			}
+			if tt.mockWaitErr != nil {
+				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).ExpectError(tt.mockWaitErr)
+			}
+			conn.Command("SADD", "work:known_jobs", jobName).Expect(1)
+
+			_, err := enqueuer.EnqueueUniqueAt(jobName, runAt, jobArgs)
+			assert.Equal(t, tt.expectedError, err)
+		})
+	}
+}
+
 func TestEnqueueUniqueInByKey(t *testing.T) {
 	pool := newTestPool(t)
 	ns := "work"
@@ -827,7 +1078,8 @@ func TestEnqueueUniqueInByKey(t *testing.T) {
 		assert.Equal(t, "cool", job.ArgString("b"))
 		assert.EqualValues(t, 1, job.ArgInt64("a"))
 		assert.NoError(t, job.ArgError())
-		assert.EqualValues(t, job.EnqueuedAt+300, job.RunAt)
+		assert.True(t, job.RunAt >= job.EnqueuedAt+300)
+		assert.True(t, job.RunAt <= job.EnqueuedAt+301)
 	}
 
 	job, err = enqueuer.EnqueueUniqueInByKey("wat", 10, Q{"a": 1, "b": "cool"}, Q{"key": "123"})
@@ -838,7 +1090,7 @@ func TestEnqueueUniqueInByKey(t *testing.T) {
 	score, j := jobOnZset(pool, redisKeyScheduled(ns))
 
 	assert.True(t, score > time.Now().Unix()+290) // We don't want to overwrite the time
-	assert.True(t, score <= time.Now().Unix()+300)
+	assert.True(t, score <= time.Now().Unix()+301)
 
 	assert.Equal(t, "wat", j.Name)
 	assert.True(t, len(j.ID) > 10)                        // Something is in it
@@ -949,6 +1201,118 @@ func TestEnqueueUniqueInByKey_WithMock(t *testing.T) {
 			conn.Command("SADD", "work:known_jobs", jobName).Expect(1)
 
 			_, err := enqueuer.EnqueueUniqueInByKey(jobName, secondsFromNow, jobArgs, jobKeyMap)
+			assert.Equal(t, tt.expectedError, err)
+		})
+	}
+}
+
+func TestEnqueueUniqueAtByKey(t *testing.T) {
+	pool := newTestPool(t)
+	ns := "work"
+	cleanKeyspace(ns, pool)
+	enqueuer := NewEnqueuer(ns, pool)
+
+	now := time.Now().Unix()
+	runAt := now + 300
+
+	job, err := enqueuer.EnqueueUniqueAtByKey("wat", runAt, Q{"a": 1, "b": "cool"}, Q{"key": "123"})
+	assert.NoError(t, err)
+	assert.NotNil(t, job)
+
+	job, err = enqueuer.EnqueueUniqueAtByKey("wat", runAt-100, Q{"a": 1, "b": "cool"}, Q{"key": "123"})
+	assert.NoError(t, err)
+	assert.Nil(t, job)
+
+	score, j := jobOnZset(pool, redisKeyScheduled(ns))
+	assert.EqualValues(t, runAt, score)
+	assert.Equal(t, "wat", j.Name)
+	assert.True(t, j.Unique)
+
+	job, err = enqueuer.EnqueueUniqueAtByKey("wat", runAt+600, Q{"a": 2, "b": "updated"}, Q{"key": "123"})
+	assert.NoError(t, err)
+	assert.Nil(t, job) // args update will be applied when processed, but not a new schedule
+
+	job, err = enqueuer.EnqueueUniqueAtByKey("wat", runAt+600, Q{"a": 2, "b": "bar"}, Q{"key": "124"})
+	assert.NoError(t, err)
+	assert.NotNil(t, job)
+}
+
+func TestEnqueueUniqueAtByKey_WithMock(t *testing.T) {
+	ns := "work"
+	jobName := "test"
+	jobArgs := map[string]interface{}{"arg": "value"}
+	jobKeyMap := map[string]interface{}{"key": "value"}
+	runAt := time.Now().Unix() + 100
+
+	ok := "ok"
+	dup := "ok"
+	var cases = []struct {
+		name            string
+		enqueuerOption  EnqueuerOption
+		mockLEvalsha    *string
+		mockLEvalshaErr error
+		mockWait        *int64
+		mockWaitErr     error
+		expectedError   error
+	}{
+		{name: "Success without wait", mockLEvalsha: &ok},
+		{name: "Duplicate without wait", mockLEvalsha: &dup},
+		{name: "Failure without wait", mockLEvalshaErr: errors.New("lpush failure"), expectedError: errors.New("lpush failure")},
+		{
+			name:           "Failure with wait",
+			enqueuerOption: EnqueuerOption{MinWaitReplicas: 2, MaxWaitTimeoutMS: 1000},
+			mockLEvalsha:   &ok,
+			mockWaitErr:    errors.New("wait failure"),
+			expectedError:  errors.New("wait failure"),
+		},
+		{
+			name:           "When wait return zero",
+			enqueuerOption: EnqueuerOption{MinWaitReplicas: 2, MaxWaitTimeoutMS: 1000},
+			mockLEvalsha:   &dup,
+			mockWait:       &zero,
+			expectedError:  ErrReplicationFailed,
+		},
+		{
+			name:           "When wait return less than MinWaitReplicas",
+			enqueuerOption: EnqueuerOption{MinWaitReplicas: 2, MaxWaitTimeoutMS: 1000},
+			mockLEvalsha:   &ok,
+			mockWait:       &one,
+			expectedError:  ErrReplicationFailed,
+		},
+		{
+			name:           "When wait return same as MinWaitReplicas",
+			enqueuerOption: EnqueuerOption{MinWaitReplicas: 2, MaxWaitTimeoutMS: 1000},
+			mockLEvalsha:   &dup,
+			mockWait:       &two,
+		},
+		{
+			name:           "When wait return more than MinWaitReplicas",
+			enqueuerOption: EnqueuerOption{MinWaitReplicas: 2, MaxWaitTimeoutMS: 1000},
+			mockLEvalsha:   &ok,
+			mockWait:       &three,
+		},
+	}
+
+	for _, tt := range cases {
+		uniqueKey := "work:unique:test:{\"key\":\"value\"}\n"
+		t.Run(tt.name, func(t *testing.T) {
+			pool, conn := newMockTestPool(t)
+			enqueuer := NewEnqueuerWithOptions(ns, pool, tt.enqueuerOption)
+			if tt.mockLEvalsha != nil {
+				conn.Command("EVALSHA", "7b32230026d2ba0d5aa0b5451237f6c086e3072c", 2, "work:scheduled", uniqueKey, redigomock.NewAnyData(), redigomock.NewAnyData(), runAt).Expect(*tt.mockLEvalsha)
+			}
+			if tt.mockLEvalshaErr != nil {
+				conn.Command("EVALSHA", "7b32230026d2ba0d5aa0b5451237f6c086e3072c", 2, "work:scheduled", uniqueKey, redigomock.NewAnyData(), redigomock.NewAnyData(), runAt).ExpectError(tt.mockLEvalshaErr)
+			}
+			if tt.mockWait != nil {
+				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).Expect(*tt.mockWait)
+			}
+			if tt.mockWaitErr != nil {
+				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).ExpectError(tt.mockWaitErr)
+			}
+			conn.Command("SADD", "work:known_jobs", jobName).Expect(1)
+
+			_, err := enqueuer.EnqueueUniqueAtByKey(jobName, runAt, jobArgs, jobKeyMap)
 			assert.Equal(t, tt.expectedError, err)
 		})
 	}
