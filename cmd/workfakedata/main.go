@@ -10,7 +10,7 @@ import (
 	"github.com/gomodule/redigo/redis"
 )
 
-var redisHostPort = flag.String("redis", ":6379", "redis hostport")
+var redisHostPort = flag.String("redis", "redis://:6379", "redis hostport")
 var redisNamespace = flag.String("ns", "work", "redis namespace")
 
 func epsilonHandler(job *work.Job) error {
@@ -42,7 +42,7 @@ func main() {
 	go func() {
 		for {
 			en := work.NewEnqueuer(*redisNamespace, pool)
-			for i := 0; i < 20; i++ {
+			for i := range 20 {
 				en.Enqueue("foobar", work.Q{"i": i})
 			}
 

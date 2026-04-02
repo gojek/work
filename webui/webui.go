@@ -1,14 +1,13 @@
 package webui
 
 import (
+	gocontext "context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
-	"sync"
 	"time"
 
-	"github.com/braintree/manners"
 	"github.com/gojek/work"
 	"github.com/gojek/work/webui/internal/assets"
 	"github.com/gomodule/redigo/redis"
@@ -16,8 +15,7 @@ import (
 
 // Server implements an HTTP server which exposes a JSON API to view and manage gojek/work items.
 type Server struct {
-	server *manners.GracefulServer
-	wg     sync.WaitGroup
+	server *http.Server
 }
 
 type context struct {
@@ -28,7 +26,7 @@ type context struct {
 func NewServer(namespace string, pool *redis.Pool, hostPort string) *Server {
 	client := work.NewClient(namespace, pool)
 	return &Server{
-		server: manners.NewWithServer(&http.Server{Addr: hostPort, Handler: NewHandler(client)}),
+		server: &http.Server{Addr: hostPort, Handler: NewHandler(client)},
 	}
 }
 
@@ -42,18 +40,14 @@ func mustAsset(name string) []byte {
 
 // Start starts the server listening for requests on the hostPort specified in NewServer.
 func (w *Server) Start() {
-	w.wg.Add(1)
-	go func(w *Server) {
+	go func() {
 		_ = w.server.ListenAndServe()
-
-		w.wg.Done()
-	}(w)
+	}()
 }
 
 // Stop stops the server and blocks until it has finished.
 func (w *Server) Stop() {
-	w.server.Close()
-	w.wg.Wait()
+	w.server.Shutdown(gocontext.Background())
 }
 
 func (c *context) ping(rw http.ResponseWriter, _ *http.Request) {
@@ -194,7 +188,7 @@ func (c *context) workJS(rw http.ResponseWriter, _ *http.Request) {
 	_, _ = rw.Write(mustAsset("work.js"))
 }
 
-func render(rw http.ResponseWriter, jsonable interface{}, err error) {
+func render(rw http.ResponseWriter, jsonable any, err error) {
 	if err != nil {
 		renderError(rw, err)
 		return

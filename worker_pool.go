@@ -85,13 +85,13 @@ type middlewareHandler struct {
 
 // NewWorkerPool creates a new worker pool. ctx should be a struct literal whose type will be used for middleware and handlers.
 // concurrency specifies how many workers to spin up - each worker can process jobs concurrently.
-func NewWorkerPool(ctx interface{}, concurrency uint, namespace string, pool *redis.Pool) *WorkerPool {
+func NewWorkerPool(ctx any, concurrency uint, namespace string, pool *redis.Pool) *WorkerPool {
 	return NewWorkerPoolWithOptions(ctx, concurrency, namespace, pool, WorkerPoolOptions{})
 }
 
 // NewWorkerPoolWithOptions creates a new worker pool as per the NewWorkerPool function, but permits you to specify
 // additional options such as sleep backoffs.
-func NewWorkerPoolWithOptions(ctx interface{}, concurrency uint, namespace string, pool *redis.Pool, workerPoolOpts WorkerPoolOptions) *WorkerPool {
+func NewWorkerPoolWithOptions(ctx any, concurrency uint, namespace string, pool *redis.Pool, workerPoolOpts WorkerPoolOptions) *WorkerPool {
 	if pool == nil {
 		panic("NewWorkerPool needs a non-nil *redis.Pool")
 	}
@@ -119,7 +119,7 @@ func NewWorkerPoolWithOptions(ctx interface{}, concurrency uint, namespace strin
 // Middleware appends the specified function to the middleware chain. The fn can take one of these forms:
 // (*ContextType).func(*Job, NextMiddlewareFunc) error, (ContextType matches the type of ctx specified when creating a pool)
 // func(*Job, NextMiddlewareFunc) error, for the generic middleware format.
-func (wp *WorkerPool) Middleware(fn interface{}) *WorkerPool {
+func (wp *WorkerPool) Middleware(fn any) *WorkerPool {
 	vfn := reflect.ValueOf(fn)
 	validateMiddlewareType(wp.contextType, vfn)
 
@@ -145,13 +145,13 @@ func (wp *WorkerPool) Middleware(fn interface{}) *WorkerPool {
 // fn can take one of these forms:
 // (*ContextType).func(*Job) error, (ContextType matches the type of ctx specified when creating a pool)
 // func(*Job) error, for the generic handler format.
-func (wp *WorkerPool) Job(name string, fn interface{}) *WorkerPool {
+func (wp *WorkerPool) Job(name string, fn any) *WorkerPool {
 	return wp.JobWithOptions(name, JobOptions{}, fn)
 }
 
 // JobWithOptions adds a handler for 'name' jobs as per the Job function, but permits you specify additional options
 // such as a job's priority, retry count, and whether to send dead jobs to the dead job queue or trash them.
-func (wp *WorkerPool) JobWithOptions(name string, jobOpts JobOptions, fn interface{}) *WorkerPool {
+func (wp *WorkerPool) JobWithOptions(name string, jobOpts JobOptions, fn any) *WorkerPool {
 	jobOpts = applyDefaultsAndValidate(jobOpts)
 
 	vfn := reflect.ValueOf(fn)
@@ -299,7 +299,7 @@ func (wp *WorkerPool) writeKnownJobsToRedis() {
 	conn := wp.pool.Get()
 	defer conn.Close()
 	key := redisKeyKnownJobs(wp.namespace)
-	jobNames := make([]interface{}, 0, len(wp.jobTypes)+1)
+	jobNames := make([]any, 0, len(wp.jobTypes)+1)
 	jobNames = append(jobNames, key)
 	for k := range wp.jobTypes {
 		jobNames = append(jobNames, k)
@@ -395,22 +395,20 @@ func isValidHandlerType(ctxType reflect.Type, vfn reflect.Value) bool {
 	}
 
 	outType := fnType.Out(0)
-	var e *error
 
-	if outType != reflect.TypeOf(e).Elem() {
+	if outType != reflect.TypeFor[error]() {
 		return false
 	}
 
-	var j *Job
 	if numIn == 1 {
-		if fnType.In(0) != reflect.TypeOf(j) {
+		if fnType.In(0) != reflect.TypeFor[*Job]() {
 			return false
 		}
 	} else if numIn == 2 {
-		if fnType.In(0) != reflect.PtrTo(ctxType) {
+		if fnType.In(0) != reflect.PointerTo(ctxType) {
 			return false
 		}
-		if fnType.In(1) != reflect.TypeOf(j) {
+		if fnType.In(1) != reflect.TypeFor[*Job]() {
 			return false
 		}
 	} else {
@@ -435,29 +433,26 @@ func isValidMiddlewareType(ctxType reflect.Type, vfn reflect.Value) bool {
 	}
 
 	outType := fnType.Out(0)
-	var e *error
 
-	if outType != reflect.TypeOf(e).Elem() {
+	if outType != reflect.TypeFor[error]() {
 		return false
 	}
 
-	var j *Job
-	var nfn NextMiddlewareFunc
 	if numIn == 2 {
-		if fnType.In(0) != reflect.TypeOf(j) {
+		if fnType.In(0) != reflect.TypeFor[*Job]() {
 			return false
 		}
-		if fnType.In(1) != reflect.TypeOf(nfn) {
+		if fnType.In(1) != reflect.TypeFor[NextMiddlewareFunc]() {
 			return false
 		}
 	} else if numIn == 3 {
-		if fnType.In(0) != reflect.PtrTo(ctxType) {
+		if fnType.In(0) != reflect.PointerTo(ctxType) {
 			return false
 		}
-		if fnType.In(1) != reflect.TypeOf(j) {
+		if fnType.In(1) != reflect.TypeFor[*Job]() {
 			return false
 		}
-		if fnType.In(2) != reflect.TypeOf(nfn) {
+		if fnType.In(2) != reflect.TypeFor[NextMiddlewareFunc]() {
 			return false
 		}
 	} else {

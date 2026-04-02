@@ -146,7 +146,7 @@ func (w *worker) fetchJob() (*Job, error) {
 	// NOTE: we could optimize this to only resort every second, or something.
 	w.sampler.sample()
 	numKeys := len(w.sampler.samples) * fetchKeysPerJobType
-	var scriptArgs = make([]interface{}, 0, numKeys+1)
+	var scriptArgs = make([]any, 0, numKeys+1)
 
 	for _, s := range w.sampler.samples {
 		scriptArgs = append(scriptArgs, s.redisJobs, s.redisJobsInProg, s.redisJobsPaused, s.redisJobsLock, s.redisJobsLockInfo, s.redisJobsMaxConcurrency) // KEYS[1-6 * N]

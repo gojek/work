@@ -21,7 +21,7 @@ func TestPrioritySampler(t *testing.T) {
 	var c1 = 0
 	var c1end = 0
 	var total = 200
-	for i := 0; i < total; i++ {
+	for range total {
 		ret := ps.sample()
 		if ret[0].priority == 5 {
 			c5++
@@ -44,7 +44,7 @@ func TestPrioritySampler(t *testing.T) {
 
 func BenchmarkPrioritySampler(b *testing.B) {
 	ps := prioritySampler{}
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		ps.add(uint(i)+1,
 			"jobs."+fmt.Sprint(i),
 			"jobsinprog."+fmt.Sprint(i),

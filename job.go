@@ -10,12 +10,12 @@ import (
 // Job represents a job.
 type Job struct {
 	// Inputs when making a new job
-	Name       string                 `json:"name,omitempty"`
-	ID         string                 `json:"id"`
-	EnqueuedAt int64                  `json:"t"`
-	Args       map[string]interface{} `json:"args"`
-	Unique     bool                   `json:"unique,omitempty"`
-	UniqueKey  string                 `json:"unique_key,omitempty"`
+	Name       string         `json:"name,omitempty"`
+	ID         string         `json:"id"`
+	EnqueuedAt int64          `json:"t"`
+	Args       map[string]any `json:"args"`
+	Unique     bool           `json:"unique,omitempty"`
+	UniqueKey  string         `json:"unique_key,omitempty"`
 
 	// Inputs when retrying
 	Fails    int64  `json:"fails,omitempty"` // number of times this job has failed
@@ -31,7 +31,7 @@ type Job struct {
 
 // Q is a shortcut to easily specify arguments for jobs when enqueueing them.
 // Example: e.Enqueue("send_email", work.Q{"addr": "test@example.com", "track": true})
-type Q map[string]interface{}
+type Q map[string]any
 
 func newJob(rawJSON, dequeuedFrom, inProgQueue []byte) (*Job, error) {
 	var job Job
@@ -50,9 +50,9 @@ func (j *Job) serialize() ([]byte, error) {
 }
 
 // setArg sets a single named argument on the job.
-func (j *Job) setArg(key string, val interface{}) {
+func (j *Job) setArg(key string, val any) {
 	if j.Args == nil {
-		j.Args = make(map[string]interface{})
+		j.Args = make(map[string]any)
 	}
 	j.Args[key] = val
 }
@@ -177,7 +177,7 @@ func missingKeyError(jsonType, key string) error {
 	return fmt.Errorf("looking for a %s in job.Arg[%s] but key wasn't found", jsonType, key)
 }
 
-func typecastError(jsonType, key string, v interface{}) error {
+func typecastError(jsonType, key string, v any) error {
 	actualType := reflect.TypeOf(v)
 	return fmt.Errorf("looking for a %s in job.Arg[%s] but value wasn't right type: %v(%v)", jsonType, key, actualType, v)
 }

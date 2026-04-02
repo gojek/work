@@ -90,7 +90,7 @@ func TestJobArgumentExtraction(t *testing.T) {
 func TestJobArgumentExtractionBadString(t *testing.T) {
 	var testCases = []struct {
 		key  string
-		val  interface{}
+		val  any
 		good bool
 	}{
 		{"a", 1, false},
@@ -129,7 +129,7 @@ func TestJobArgumentExtractionBadString(t *testing.T) {
 func TestJobArgumentExtractionBadBool(t *testing.T) {
 	var testCases = []struct {
 		key  string
-		val  interface{}
+		val  any
 		good bool
 	}{
 		{"a", 1, false},
@@ -169,7 +169,7 @@ func TestJobArgumentExtractionBadBool(t *testing.T) {
 func TestJobArgumentExtractionBadInt(t *testing.T) {
 	var testCases = []struct {
 		key  string
-		val  interface{}
+		val  any
 		good bool
 	}{
 		{"a", "boo", false},
@@ -215,7 +215,7 @@ func TestJobArgumentExtractionBadInt(t *testing.T) {
 func TestJobArgumentExtractionBadFloat(t *testing.T) {
 	var testCases = []struct {
 		key  string
-		val  interface{}
+		val  any
 		good bool
 	}{
 		{"a", "boo", false},

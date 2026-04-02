@@ -399,7 +399,7 @@ func (c *Client) RetryDeadJob(diedAt int64, jobID string) error {
 
 	script := redis.NewScript(len(jobNames)+1, redisLuaRequeueSingleDeadCmd)
 
-	args := make([]interface{}, 0, len(jobNames)+1+3)
+	args := make([]any, 0, len(jobNames)+1+3)
 	args = append(args, redisKeyDead(c.namespace)) // KEY[1]
 	for _, jobName := range jobNames {
 		args = append(args, redisKeyJobs(c.namespace, jobName)) // KEY[2, 3, ...]
@@ -442,7 +442,7 @@ func (c *Client) RetryAllDeadJobs() error {
 
 	script := redis.NewScript(len(jobNames)+1, redisLuaRequeueAllDeadCmd)
 
-	args := make([]interface{}, 0, len(jobNames)+1+3)
+	args := make([]any, 0, len(jobNames)+1+3)
 	args = append(args, redisKeyDead(c.namespace)) // KEY[1]
 	for _, jobName := range jobNames {
 		args = append(args, redisKeyJobs(c.namespace, jobName)) // KEY[2, 3, ...]
@@ -456,7 +456,7 @@ func (c *Client) RetryAllDeadJobs() error {
 
 	// Cap iterations for safety (which could reprocess 1k*1k jobs).
 	// This is conceptually an infinite loop but let's be careful.
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		res, err := redis.Int64(script.Do(conn, args...))
 		if err != nil {
 			logError("client.retry_all_dead_jobs.do", err)
@@ -538,7 +538,7 @@ func (c *Client) DeleteRetryJob(retryAt int64, jobID string) error {
 func (c *Client) deleteZsetJob(zsetKey string, zscore int64, jobID string) (bool, []byte, error) {
 	script := redis.NewScript(1, redisLuaDeleteSingleCmd)
 
-	args := make([]interface{}, 0, 1+2)
+	args := make([]any, 0, 1+2)
 	args = append(args, zsetKey) // KEY[1]
 	args = append(args, zscore)  // ARGV[1]
 	args = append(args, jobID)   // ARGV[2]

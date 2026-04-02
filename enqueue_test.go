@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rafaeljusto/redigomock"
+	"github.com/rafaeljusto/redigomock/v3"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -61,7 +61,7 @@ func TestEnqueue(t *testing.T) {
 func TestEnqueue_WithMock(t *testing.T) {
 	ns := "work"
 	jobName := "test"
-	jobArgs := map[string]interface{}{"arg": "value"}
+	jobArgs := map[string]any{"arg": "value"}
 	var cases = []struct {
 		name           string
 		enqueuerOption EnqueuerOption
@@ -200,7 +200,7 @@ func TestEnqueueIn(t *testing.T) {
 func TestEnqueueIn_WithMock(t *testing.T) {
 	ns := "work"
 	jobName := "test"
-	jobArgs := map[string]interface{}{"arg": "value"}
+	jobArgs := map[string]any{"arg": "value"}
 	secondsFromNow := int64(100)
 	now := time.Now().Unix()
 	setNowEpochSecondsMock(now)
@@ -332,7 +332,7 @@ func TestEnqueueAt(t *testing.T) {
 func TestEnqueueAt_WithMock(t *testing.T) {
 	ns := "work"
 	jobName := "test"
-	jobArgs := map[string]interface{}{"arg": "value"}
+	jobArgs := map[string]any{"arg": "value"}
 	now := time.Now().Unix()
 	runAt := now + 100
 	setNowEpochSecondsMock(now)
@@ -503,7 +503,7 @@ func TestEnqueueUnique(t *testing.T) {
 func TestEnqueueUnique_WithMock(t *testing.T) {
 	ns := "work"
 	jobName := "test"
-	jobArgs := map[string]interface{}{"arg": "value"}
+	jobArgs := map[string]any{"arg": "value"}
 
 	ok := "ok"
 	dup := "ok"
@@ -660,7 +660,7 @@ func TestEnqueueUniqueIn(t *testing.T) {
 func TestEnqueueUniqueIn_WithMock(t *testing.T) {
 	ns := "work"
 	jobName := "test"
-	jobArgs := map[string]interface{}{"arg": "value"}
+	jobArgs := map[string]any{"arg": "value"}
 	secondsFromNow := int64(100)
 	now := time.Now().Unix()
 	setNowEpochSecondsMock(now)
@@ -847,8 +847,8 @@ func TestEnqueueUniqueByKey(t *testing.T) {
 func TestEnqueueUniqueByKey_WithMock(t *testing.T) {
 	ns := "work"
 	jobName := "test"
-	jobArgs := map[string]interface{}{"arg": "value"}
-	jobKeyMap := map[string]interface{}{"key": "value"}
+	jobArgs := map[string]any{"arg": "value"}
+	jobKeyMap := map[string]any{"key": "value"}
 
 	ok := "ok"
 	dup := "ok"
@@ -982,7 +982,7 @@ func TestEnqueueUniqueAt(t *testing.T) {
 func TestEnqueueUniqueAt_WithMock(t *testing.T) {
 	ns := "work"
 	jobName := "test"
-	jobArgs := map[string]interface{}{"arg": "value"}
+	jobArgs := map[string]any{"arg": "value"}
 
 	runAt := time.Now().Unix() + 100
 
@@ -1105,8 +1105,8 @@ func TestEnqueueUniqueInByKey(t *testing.T) {
 func TestEnqueueUniqueInByKey_WithMock(t *testing.T) {
 	ns := "work"
 	jobName := "test"
-	jobArgs := map[string]interface{}{"arg": "value"}
-	jobKeyMap := map[string]interface{}{"key": "value"}
+	jobArgs := map[string]any{"arg": "value"}
+	jobKeyMap := map[string]any{"key": "value"}
 	secondsFromNow := int64(100)
 	now := time.Now().Unix()
 	setNowEpochSecondsMock(now)
@@ -1240,8 +1240,8 @@ func TestEnqueueUniqueAtByKey(t *testing.T) {
 func TestEnqueueUniqueAtByKey_WithMock(t *testing.T) {
 	ns := "work"
 	jobName := "test"
-	jobArgs := map[string]interface{}{"arg": "value"}
-	jobKeyMap := map[string]interface{}{"key": "value"}
+	jobArgs := map[string]any{"arg": "value"}
+	jobKeyMap := map[string]any{"key": "value"}
 	runAt := time.Now().Unix() + 100
 
 	ok := "ok"

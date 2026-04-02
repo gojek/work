@@ -12,7 +12,7 @@ type requeuer struct {
 	pool      *redis.Pool
 
 	redisRequeueScript *redis.Script
-	redisRequeueArgs   []interface{}
+	redisRequeueArgs   []any
 
 	stopChan         chan struct{}
 	doneStoppingChan chan struct{}
@@ -22,7 +22,7 @@ type requeuer struct {
 }
 
 func newRequeuer(namespace string, pool *redis.Pool, requeueKey string, jobNames []string) *requeuer {
-	args := make([]interface{}, 0, len(jobNames)+2+2)
+	args := make([]any, 0, len(jobNames)+2+2)
 	args = append(args, requeueKey)              // KEY[1]
 	args = append(args, redisKeyDead(namespace)) // KEY[2]
 	for _, jobName := range jobNames {

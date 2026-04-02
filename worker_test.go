@@ -9,7 +9,7 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gomodule/redigo/redis"
-	"github.com/rafaeljusto/redigomock"
+	"github.com/rafaeljusto/redigomock/v3"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -335,7 +335,7 @@ func TestWorkersPaused(t *testing.T) {
 	w.start()
 
 	// make sure the jobs stay in the still in the run queue and not moved to in progress
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		time.Sleep(10 * time.Millisecond)
 		assert.EqualValues(t, 1, listSize(pool, redisKeyJobs(ns, job1)))
 		assert.EqualValues(t, 0, listSize(pool, redisKeyJobsInProgress(ns, "1", job1)))
@@ -587,7 +587,7 @@ func jobOnZset(pool *redis.Pool, key string) (int64, *Job) {
 		panic("ZRANGE error: " + err.Error())
 	}
 
-	vv := v.([]interface{})
+	vv := v.([]any)
 
 	job, err := newJob(vv[0].([]byte), nil, nil)
 	if err != nil {

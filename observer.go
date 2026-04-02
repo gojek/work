@@ -50,7 +50,7 @@ type observation struct {
 
 	// These need to be set when starting a job
 	startedAt int64
-	arguments map[string]interface{}
+	arguments map[string]any
 
 	// If we're done w/ the job, err will indicate the success/failure of it
 	err error // nil: success. not nil: the error we got when running the job
@@ -91,7 +91,7 @@ func (o *observer) drain() {
 	<-o.doneDrainingChan
 }
 
-func (o *observer) observeStarted(jobName, jobID string, arguments map[string]interface{}) {
+func (o *observer) observeStarted(jobName, jobID string, arguments map[string]any) {
 	o.observationsChan <- &observation{
 		kind:      observationKindStarted,
 		jobName:   jobName,
@@ -212,7 +212,7 @@ func (o *observer) writeStatus(obv *observation) error {
 			}
 		}
 
-		args := make([]interface{}, 0, 13)
+		args := make([]any, 0, 13)
 		args = append(args,
 			key,
 			"job_name", obv.jobName,
