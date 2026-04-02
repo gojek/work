@@ -47,7 +47,7 @@ func (w *Server) Start() {
 
 // Stop stops the server and blocks until it has finished.
 func (w *Server) Stop() {
-	w.server.Shutdown(gocontext.Background())
+	_ = w.server.Shutdown(gocontext.Background())
 }
 
 func (c *context) ping(rw http.ResponseWriter, _ *http.Request) {

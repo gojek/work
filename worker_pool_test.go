@@ -12,7 +12,6 @@ import (
 )
 
 type tstCtx struct {
-	a int
 	bytes.Buffer
 }
 

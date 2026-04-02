@@ -15,24 +15,17 @@ const (
 )
 
 type periodicEnqueuer struct {
-	namespace             string
-	pool                  *redis.Pool
-	periodicJobs          []*periodicJob
-	scheduledPeriodicJobs []*scheduledPeriodicJob
-	stopChan              chan struct{}
-	doneStoppingChan      chan struct{}
+	namespace        string
+	pool             *redis.Pool
+	periodicJobs     []*periodicJob
+	stopChan         chan struct{}
+	doneStoppingChan chan struct{}
 }
 
 type periodicJob struct {
 	jobName  string
 	spec     string
 	schedule cron.Schedule
-}
-
-type scheduledPeriodicJob struct {
-	scheduledAt      time.Time
-	scheduledAtEpoch int64
-	*periodicJob
 }
 
 func newPeriodicEnqueuer(namespace string, pool *redis.Pool, periodicJobs []*periodicJob) *periodicEnqueuer {

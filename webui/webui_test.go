@@ -474,7 +474,7 @@ func (s *TestWebUIServerSuite) TestAssets() {
 
 	req, err = http.NewRequest(http.MethodGet, "http://127.0.0.1:6666/work.js", nil)
 	s.NoError(err)
-	resp, err = http.DefaultClient.Do(req)
+	_, err = http.DefaultClient.Do(req)
 	s.NoError(err)
 }
 

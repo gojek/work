@@ -280,7 +280,7 @@ func (w *worker) removeJobFromInProgress(job *Job, fate terminateOp) {
 
 type terminateOp func(conn redis.Conn)
 
-func terminateOnly(_ redis.Conn) { return }
+func terminateOnly(_ redis.Conn) {}
 func terminateAndRetry(w *worker, jt *jobType, job *Job) terminateOp {
 	rawJSON, err := job.serialize()
 	if err != nil {
