@@ -2,7 +2,7 @@ package work
 
 import (
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"strings"
 	"time"
 
@@ -60,7 +60,7 @@ func (r *deadPoolReaper) loop() {
 			return
 		case <-timer.C:
 			// Schedule next occurrence periodically with jitter
-			timer.Reset(r.reapPeriod + time.Duration(rand.Intn(reapJitterSecs))*time.Second)
+			timer.Reset(r.reapPeriod + time.Duration(rand.IntN(reapJitterSecs))*time.Second)
 
 			// Reap
 			if err := r.reap(); err != nil {

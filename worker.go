@@ -2,7 +2,7 @@ package work
 
 import (
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"reflect"
 	"time"
 
@@ -323,5 +323,5 @@ func (w *worker) jobFate(jt *jobType, job *Job) terminateOp {
 // Default algorithm returns an fastly increasing backoff counter which grows in an unbounded fashion
 func defaultBackoffCalculator(job *Job) int64 {
 	fails := job.Fails
-	return (fails * fails * fails * fails) + 15 + (rand.Int63n(30) * (fails + 1))
+	return (fails * fails * fails * fails) + 15 + (rand.Int64N(30) * (fails + 1))
 }

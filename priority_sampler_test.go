@@ -2,14 +2,12 @@ package work
 
 import (
 	"fmt"
-	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestPrioritySampler(t *testing.T) {
-	rand.Seed(1)
 	ps := prioritySampler{}
 
 	ps.add(5, "jobs.5", "jobsinprog.5", "jobspaused.5", "jobslock.5", "jobslockinfo.5", "jobsconcurrency.5")
@@ -20,7 +18,7 @@ func TestPrioritySampler(t *testing.T) {
 	var c2 = 0
 	var c1 = 0
 	var c1end = 0
-	var total = 200
+	var total = 1000
 	for range total {
 		ret := ps.sample()
 		if ret[0].priority == 5 {
@@ -36,10 +34,10 @@ func TestPrioritySampler(t *testing.T) {
 	}
 
 	// make sure these numbers are roughly correct. note that probability is a thing.
-	assert.True(t, c5 > (2*c2))
-	assert.True(t, float64(c2) > (1.5*float64(c1)))
-	assert.True(t, c1 >= (total/13), fmt.Sprintf("c1 = %d total = %d total/13=%d", c1, total, total/13))
-	assert.True(t, float64(c1end) > (float64(total)*0.50))
+	assert.Greater(t, c5, (2 * c2))
+	assert.Greater(t, float64(c2), (1.5 * float64(c1)))
+	assert.GreaterOrEqualf(t, c1, total/13, "c1 = %d total = %d total/13=%d", c1, total, total/13)
+	assert.Greater(t, float64(c1end), (float64(total) * 0.50))
 }
 
 func BenchmarkPrioritySampler(b *testing.B) {

@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"time"
 
 	"github.com/gojek/work"
@@ -17,7 +17,7 @@ func epsilonHandler(job *work.Job) error {
 	fmt.Println("epsilon")
 	time.Sleep(time.Second)
 
-	if rand.Intn(2) == 0 {
+	if rand.IntN(2) == 0 {
 		return fmt.Errorf("random error")
 	}
 	return nil

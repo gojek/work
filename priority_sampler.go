@@ -1,7 +1,7 @@
 package work
 
 import (
-	"math/rand"
+	"math/rand/v2"
 )
 
 type prioritySampler struct {
@@ -57,7 +57,7 @@ func (s *prioritySampler) sample() []sampleItem {
 	//     If we find where it fits, sort the item to the next slot towards the front of the slice.
 	for remaining > 1 {
 		// rn from [0 to sumRemaining)
-		rn := uint(rand.Uint32()) % sumRemaining
+		rn := rand.UintN(sumRemaining)
 
 		prevSum := uint(0)
 		for i := lenSamples - 1; i >= lastValidIdx; i-- {
