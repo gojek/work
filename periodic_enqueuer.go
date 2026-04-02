@@ -2,7 +2,7 @@ package work
 
 import (
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"time"
 
 	"github.com/gomodule/redigo/redis"
@@ -15,24 +15,17 @@ const (
 )
 
 type periodicEnqueuer struct {
-	namespace             string
-	pool                  *redis.Pool
-	periodicJobs          []*periodicJob
-	scheduledPeriodicJobs []*scheduledPeriodicJob
-	stopChan              chan struct{}
-	doneStoppingChan      chan struct{}
+	namespace        string
+	pool             *redis.Pool
+	periodicJobs     []*periodicJob
+	stopChan         chan struct{}
+	doneStoppingChan chan struct{}
 }
 
 type periodicJob struct {
 	jobName  string
 	spec     string
 	schedule cron.Schedule
-}
-
-type scheduledPeriodicJob struct {
-	scheduledAt      time.Time
-	scheduledAtEpoch int64
-	*periodicJob
 }
 
 func newPeriodicEnqueuer(namespace string, pool *redis.Pool, periodicJobs []*periodicJob) *periodicEnqueuer {
@@ -56,7 +49,7 @@ func (pe *periodicEnqueuer) stop() {
 
 func (pe *periodicEnqueuer) loop() {
 	// Begin reaping periodically
-	timer := time.NewTimer(periodicEnqueuerSleep + time.Duration(rand.Intn(30))*time.Second)
+	timer := time.NewTimer(periodicEnqueuerSleep + time.Duration(rand.IntN(30))*time.Second)
 	defer timer.Stop()
 
 	if pe.shouldEnqueue() {
@@ -72,7 +65,7 @@ func (pe *periodicEnqueuer) loop() {
 			pe.doneStoppingChan <- struct{}{}
 			return
 		case <-timer.C:
-			timer.Reset(periodicEnqueuerSleep + time.Duration(rand.Intn(30))*time.Second)
+			timer.Reset(periodicEnqueuerSleep + time.Duration(rand.IntN(30))*time.Second)
 			if pe.shouldEnqueue() {
 				err := pe.enqueue()
 				if err != nil {

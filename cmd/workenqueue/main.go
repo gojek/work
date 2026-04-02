@@ -11,7 +11,7 @@ import (
 	"github.com/gomodule/redigo/redis"
 )
 
-var redisHostPort = flag.String("redis", ":6379", "redis hostport")
+var redisHostPort = flag.String("redis", "redis://:6379", "redis hostport")
 var redisNamespace = flag.String("ns", "work", "redis namespace")
 var jobName = flag.String("job", "", "job name")
 var jobArgs = flag.String("args", "{}", "job arguments")
@@ -26,7 +26,7 @@ func main() {
 
 	pool := newPool(*redisHostPort)
 
-	var args map[string]interface{}
+	var args map[string]any
 	err := json.Unmarshal([]byte(*jobArgs), &args)
 	if err != nil {
 		fmt.Println("invalid args:", err)

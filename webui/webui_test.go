@@ -99,13 +99,13 @@ func (s *TestWebUIServerSuite) TestQueues() {
 	s.NoError(err)
 	s.Equal(200, resp.StatusCode)
 
-	var res []interface{}
+	var res []any
 	err = json.NewDecoder(resp.Body).Decode(&res)
 	s.NoError(err)
 
 	s.Equal(3, len(res))
 
-	foomap, ok := res[0].(map[string]interface{})
+	foomap, ok := res[0].(map[string]any)
 	s.True(ok)
 	s.Equal("foo", foomap["job_name"])
 	s.EqualValues(2, foomap["count"])
@@ -134,13 +134,13 @@ func (s *TestWebUIServerSuite) TestWorkerPools() {
 	s.NoError(err)
 	s.Equal(200, resp.StatusCode)
 
-	var res []interface{}
+	var res []any
 	err = json.NewDecoder(resp.Body).Decode(&res)
 	s.NoError(err)
 
 	s.Equal(2, len(res))
 
-	w1stat, ok := res[0].(map[string]interface{})
+	w1stat, ok := res[0].(map[string]any)
 	s.True(ok)
 	s.True(w1stat["worker_pool_id"] != "")
 	// NOTE: WorkerPoolStatus is tested elsewhere.
@@ -174,7 +174,7 @@ func (s *TestWebUIServerSuite) TestBusyWorkers() {
 	s.NoError(err)
 	s.Equal(200, resp.StatusCode)
 
-	var res []interface{}
+	var res []any
 	err = json.NewDecoder(resp.Body).Decode(&res)
 	s.NoError(err)
 	s.Equal(0, len(res))
@@ -198,7 +198,7 @@ func (s *TestWebUIServerSuite) TestBusyWorkers() {
 	s.Equal(1, len(res))
 
 	if len(res) == 1 {
-		hash, ok := res[0].(map[string]interface{})
+		hash, ok := res[0].(map[string]any)
 		s.True(ok)
 		s.Equal("wat", hash["job_name"])
 		s.Equal(true, hash["is_busy"])
@@ -474,7 +474,7 @@ func (s *TestWebUIServerSuite) TestAssets() {
 
 	req, err = http.NewRequest(http.MethodGet, "http://127.0.0.1:6666/work.js", nil)
 	s.NoError(err)
-	resp, err = http.DefaultClient.Do(req)
+	_, err = http.DefaultClient.Do(req)
 	s.NoError(err)
 }
 

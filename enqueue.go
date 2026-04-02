@@ -53,7 +53,7 @@ func NewEnqueuerWithOptions(namespace string, pool *redis.Pool, opt EnqueuerOpti
 
 // Enqueue will enqueue the specified job name and arguments. The args param can be nil if no args ar needed.
 // Example: e.Enqueue("send_email", work.Q{"addr": "test@example.com"})
-func (e *Enqueuer) Enqueue(jobName string, args map[string]interface{}) (*Job, error) {
+func (e *Enqueuer) Enqueue(jobName string, args map[string]any) (*Job, error) {
 	job := &Job{
 		Name:       jobName,
 		ID:         makeIdentifier(),
@@ -81,11 +81,11 @@ func (e *Enqueuer) Enqueue(jobName string, args map[string]interface{}) (*Job, e
 }
 
 // EnqueueIn enqueues a job in the scheduled job queue for execution in secondsFromNow seconds.
-func (e *Enqueuer) EnqueueIn(jobName string, secondsFromNow int64, args map[string]interface{}) (*ScheduledJob, error) {
+func (e *Enqueuer) EnqueueIn(jobName string, secondsFromNow int64, args map[string]any) (*ScheduledJob, error) {
 	return e.EnqueueAt(jobName, epochAfterSeconds(secondsFromNow), args)
 }
 
-func (e *Enqueuer) EnqueueAt(jobName string, epochSeconds int64, args map[string]interface{}) (*ScheduledJob, error) {
+func (e *Enqueuer) EnqueueAt(jobName string, epochSeconds int64, args map[string]any) (*ScheduledJob, error) {
 	job := &Job{
 		Name:       jobName,
 		ID:         makeIdentifier(),
@@ -123,12 +123,12 @@ func (e *Enqueuer) EnqueueAt(jobName string, epochSeconds int64, args map[string
 // Any failed jobs in the retry queue or dead queue don't count against the uniqueness -- so if a job fails and is retried, two unique jobs with the same name and arguments can be enqueued at once.
 // In order to add robustness to the system, jobs are only unique for 24 hours after they're enqueued. This is mostly relevant for scheduled jobs.
 // EnqueueUnique returns the job if it was enqueued and nil if it wasn't
-func (e *Enqueuer) EnqueueUnique(jobName string, args map[string]interface{}) (*Job, error) {
+func (e *Enqueuer) EnqueueUnique(jobName string, args map[string]any) (*Job, error) {
 	return e.EnqueueUniqueByKey(jobName, args, nil)
 }
 
 // EnqueueUniqueIn enqueues a unique job in the scheduled job queue for execution in secondsFromNow seconds. See EnqueueUnique for the semantics of unique jobs.
-func (e *Enqueuer) EnqueueUniqueIn(jobName string, secondsFromNow int64, args map[string]interface{}) (*ScheduledJob, error) {
+func (e *Enqueuer) EnqueueUniqueIn(jobName string, secondsFromNow int64, args map[string]any) (*ScheduledJob, error) {
 	return e.EnqueueUniqueInByKey(jobName, secondsFromNow, args, nil)
 }
 
@@ -138,7 +138,7 @@ func (e *Enqueuer) EnqueueUniqueIn(jobName string, secondsFromNow int64, args ma
 // Any failed jobs in the retry queue or dead queue don't count against the uniqueness -- so if a job fails and is retried, two unique jobs with the same name and arguments can be enqueued at once.
 // In order to add robustness to the system, jobs are only unique for 24 hours after they're enqueued. This is mostly relevant for scheduled jobs.
 // EnqueueUniqueByKey returns the job if it was enqueued and nil if it wasn't
-func (e *Enqueuer) EnqueueUniqueByKey(jobName string, args map[string]interface{}, keyMap map[string]interface{}) (*Job, error) {
+func (e *Enqueuer) EnqueueUniqueByKey(jobName string, args map[string]any, keyMap map[string]any) (*Job, error) {
 	enqueue, job, err := e.uniqueJobHelper(jobName, args, keyMap)
 	if err != nil {
 		return nil, err
@@ -154,17 +154,17 @@ func (e *Enqueuer) EnqueueUniqueByKey(jobName string, args map[string]interface{
 
 // EnqueueUniqueInByKey enqueues a job in the scheduled job queue that is unique on specified key for execution in secondsFromNow seconds. See EnqueueUnique for the semantics of unique jobs.
 // Subsequent calls with same key will update arguments
-func (e *Enqueuer) EnqueueUniqueInByKey(jobName string, secondsFromNow int64, args map[string]interface{}, keyMap map[string]interface{}) (*ScheduledJob, error) {
+func (e *Enqueuer) EnqueueUniqueInByKey(jobName string, secondsFromNow int64, args map[string]any, keyMap map[string]any) (*ScheduledJob, error) {
 	return e.EnqueueUniqueAtByKey(jobName, epochAfterSeconds(secondsFromNow), args, keyMap)
 }
 
 // EnqueueUniqueAt enqueues a unique job at the specified absolute epoch time in seconds. See EnqueueUnique for semantics of unique jobs.
-func (e *Enqueuer) EnqueueUniqueAt(jobName string, epochSeconds int64, args map[string]interface{}) (*ScheduledJob, error) {
+func (e *Enqueuer) EnqueueUniqueAt(jobName string, epochSeconds int64, args map[string]any) (*ScheduledJob, error) {
 	return e.EnqueueUniqueAtByKey(jobName, epochSeconds, args, nil)
 }
 
 // EnqueueUniqueAtByKey enqueues a job unique on specified key at the specified absolute epoch time in seconds, updating arguments. See EnqueueUnique for semantics of unique jobs.
-func (e *Enqueuer) EnqueueUniqueAtByKey(jobName string, epochSeconds int64, args map[string]interface{}, keyMap map[string]interface{}) (*ScheduledJob, error) {
+func (e *Enqueuer) EnqueueUniqueAtByKey(jobName string, epochSeconds int64, args map[string]any, keyMap map[string]any) (*ScheduledJob, error) {
 	enqueue, job, err := e.uniqueJobHelper(jobName, args, keyMap)
 	if err != nil {
 		return nil, err
@@ -210,7 +210,7 @@ func (e *Enqueuer) addToKnownJobs(conn redis.Conn, jobName string) error {
 
 type enqueueFnType func(*int64) (string, error)
 
-func (e *Enqueuer) uniqueJobHelper(jobName string, args map[string]interface{}, keyMap map[string]interface{}) (enqueueFnType, *Job, error) {
+func (e *Enqueuer) uniqueJobHelper(jobName string, args map[string]any, keyMap map[string]any) (enqueueFnType, *Job, error) {
 	useDefaultKeys := false
 	if keyMap == nil {
 		useDefaultKeys = true
@@ -244,7 +244,7 @@ func (e *Enqueuer) uniqueJobHelper(jobName string, args map[string]interface{}, 
 			return "", err
 		}
 
-		scriptArgs := []interface{}{}
+		scriptArgs := []any{}
 		script := e.enqueueUniqueScript
 
 		scriptArgs = append(scriptArgs, e.queuePrefix+jobName) // KEY[1]
@@ -286,7 +286,7 @@ func (e *Enqueuer) uniqueJobHelper(jobName string, args map[string]interface{}, 
 	return enqueueFn, job, nil
 }
 
-func (e *Enqueuer) redisDoHelper(c redis.Conn, cmdName string, args ...interface{}) (reply interface{}, err error) {
+func (e *Enqueuer) redisDoHelper(c redis.Conn, cmdName string, args ...any) (reply any, err error) {
 	if err = c.Send(cmdName, args...); err != nil {
 		return
 	}

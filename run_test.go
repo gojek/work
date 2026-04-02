@@ -45,7 +45,7 @@ func TestRunBasicMiddleware(t *testing.T) {
 
 	job := &Job{
 		Name: "foo",
-		Args: map[string]interface{}{"a": "foo"},
+		Args: map[string]any{"a": "foo"},
 	}
 
 	v, err := runJob(job, tstCtxType, middleware, jt)

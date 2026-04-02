@@ -2,7 +2,7 @@ package work
 
 import (
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"strings"
 	"time"
 
@@ -60,7 +60,7 @@ func (r *deadPoolReaper) loop() {
 			return
 		case <-timer.C:
 			// Schedule next occurrence periodically with jitter
-			timer.Reset(r.reapPeriod + time.Duration(rand.Intn(reapJitterSecs))*time.Second)
+			timer.Reset(r.reapPeriod + time.Duration(rand.IntN(reapJitterSecs))*time.Second)
 
 			// Reap
 			if err := r.reap(); err != nil {
@@ -111,7 +111,7 @@ func (r *deadPoolReaper) reap() error {
 func (r *deadPoolReaper) cleanStaleLockInfo(poolID string, jobTypes []string) error {
 	numKeys := len(jobTypes) * 2
 	redisReapLocksScript := redis.NewScript(numKeys, redisLuaReapStaleLocks)
-	var scriptArgs = make([]interface{}, 0, numKeys+1) // +1 for argv[1]
+	var scriptArgs = make([]any, 0, numKeys+1) // +1 for argv[1]
 
 	for _, jobType := range jobTypes {
 		scriptArgs = append(scriptArgs, redisKeyJobsLock(r.namespace, jobType), redisKeyJobsLockInfo(r.namespace, jobType))
@@ -130,7 +130,7 @@ func (r *deadPoolReaper) cleanStaleLockInfo(poolID string, jobTypes []string) er
 func (r *deadPoolReaper) requeueInProgressJobs(poolID string, jobTypes []string) error {
 	numKeys := len(jobTypes) * requeueKeysPerJob
 	redisRequeueScript := redis.NewScript(numKeys, redisLuaReenqueueJob)
-	var scriptArgs = make([]interface{}, 0, numKeys+1)
+	var scriptArgs = make([]any, 0, numKeys+1)
 
 	for _, jobType := range jobTypes {
 		// pops from in progress, push into job queue and decrement the queue lock

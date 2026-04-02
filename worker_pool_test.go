@@ -12,7 +12,6 @@ import (
 )
 
 type tstCtx struct {
-	a int
 	bytes.Buffer
 }
 
@@ -20,11 +19,11 @@ func (c *tstCtx) record(s string) {
 	_, _ = c.WriteString(s)
 }
 
-var tstCtxType = reflect.TypeOf(tstCtx{})
+var tstCtxType = reflect.TypeFor[tstCtx]()
 
 func TestWorkerPoolHandlerValidations(t *testing.T) {
 	var cases = []struct {
-		fn   interface{}
+		fn   any
 		good bool
 	}{
 		{func(j *Job) error { return nil }, true},
@@ -48,7 +47,7 @@ func TestWorkerPoolHandlerValidations(t *testing.T) {
 
 func TestWorkerPoolMiddlewareValidations(t *testing.T) {
 	var cases = []struct {
-		fn   interface{}
+		fn   any
 		good bool
 	}{
 		{func(j *Job, n NextMiddlewareFunc) error { return nil }, true},
@@ -135,7 +134,7 @@ func TestWorkersPoolRunSingleThreaded(t *testing.T) {
 	wp.Start()
 	// enqueue some jobs
 	enqueuer := NewEnqueuer(ns, pool)
-	for i := 0; i < numJobs; i++ {
+	for range numJobs {
 		_, err := enqueuer.Enqueue(job1, Q{"sleep": sleepTime})
 		assert.Nil(t, err)
 	}
@@ -177,7 +176,7 @@ func TestWorkerPoolPauseSingleThreadedJobs(t *testing.T) {
 	wp.Start()
 	// enqueue some jobs
 	enqueuer := NewEnqueuer(ns, pool)
-	for i := 0; i < numJobs; i++ {
+	for range numJobs {
 		_, err := enqueuer.Enqueue(job1, Q{"sleep": sleepTime})
 		assert.Nil(t, err)
 	}

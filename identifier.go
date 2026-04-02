@@ -2,15 +2,14 @@ package work
 
 import (
 	"crypto/rand"
-	"fmt"
-	"io"
+	"encoding/hex"
 )
 
 func makeIdentifier() string {
 	b := make([]byte, 12)
-	_, err := io.ReadFull(rand.Reader, b)
+	_, err := rand.Read(b)
 	if err != nil {
 		return ""
 	}
-	return fmt.Sprintf("%x", b)
+	return hex.EncodeToString(b)
 }

@@ -72,7 +72,7 @@ func redisKeyJobsConcurrency(namespace, jobName string) string {
 	return redisKeyJobs(namespace, jobName) + ":max_concurrency"
 }
 
-func redisKeyUniqueJob(namespace, jobName string, args map[string]interface{}) (string, error) {
+func redisKeyUniqueJob(namespace, jobName string, args map[string]any) (string, error) {
 	var buf bytes.Buffer
 
 	buf.WriteString(redisNamespacePrefix(namespace))

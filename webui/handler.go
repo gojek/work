@@ -28,7 +28,7 @@ func NewHandler(client *work.Client) *http.ServeMux {
 	mux.HandleFunc("POST /retry_dead_job/{died_at}/{job_id}", ctx.retryDeadJob)
 	mux.HandleFunc("POST /delete_all_dead_jobs", ctx.deleteAllDeadJobs)
 	mux.HandleFunc("POST /retry_all_dead_jobs", ctx.retryAllDeadJobs)
-	mux.HandleFunc("GET /", ctx.indexPage)
+	mux.HandleFunc("GET /{$}", ctx.indexPage)
 	mux.HandleFunc("GET /work.js", ctx.workJS)
 
 	return mux

@@ -236,8 +236,8 @@ func TestClientScheduledJobs(t *testing.T) {
 		assert.EqualValues(t, 1425263409, jobs[1].EnqueuedAt)
 		assert.EqualValues(t, 1425263409, jobs[2].EnqueuedAt)
 
-		assert.EqualValues(t, interface{}(1), jobs[0].Args["a"])
-		assert.EqualValues(t, interface{}(2), jobs[0].Args["b"])
+		assert.EqualValues(t, any(1), jobs[0].Args["a"])
+		assert.EqualValues(t, any(2), jobs[0].Args["b"])
 
 		assert.EqualValues(t, 0, jobs[0].Fails)
 		assert.EqualValues(t, 0, jobs[1].Fails)
@@ -285,7 +285,7 @@ func TestClientRetryJobs(t *testing.T) {
 		assert.EqualValues(t, 1425263429, jobs[0].FailedAt)
 		assert.Equal(t, "wat", jobs[0].Name)
 		assert.EqualValues(t, 1425263409, jobs[0].EnqueuedAt)
-		assert.EqualValues(t, interface{}(1), jobs[0].Args["a"])
+		assert.EqualValues(t, any(1), jobs[0].Args["a"])
 		assert.EqualValues(t, 1, jobs[0].Fails)
 		assert.EqualValues(t, 1425263429, jobs[0].Job.FailedAt)
 		assert.Equal(t, "ohno", jobs[0].LastErr)
@@ -325,7 +325,7 @@ func TestClientDeadJobs(t *testing.T) {
 		assert.EqualValues(t, 1425263429, jobs[0].FailedAt)
 		assert.Equal(t, "wat", jobs[0].Name)
 		assert.EqualValues(t, 1425263409, jobs[0].EnqueuedAt)
-		assert.EqualValues(t, interface{}(1), jobs[0].Args["a"])
+		assert.EqualValues(t, any(1), jobs[0].Args["a"])
 		assert.EqualValues(t, 1, jobs[0].Fails)
 		assert.EqualValues(t, 1425263429, jobs[0].Job.FailedAt)
 		assert.Equal(t, "ohno", jobs[0].LastErr)
@@ -445,7 +445,7 @@ func TestClientRetryDeadJobWithArgs(t *testing.T) {
 		Name:       name,
 		ID:         makeIdentifier(),
 		EnqueuedAt: encAt,
-		Args:       map[string]interface{}{"a": "wat"},
+		Args:       map[string]any{"a": "wat"},
 		Fails:      3,
 		LastErr:    "sorry",
 		FailedAt:   failAt,
@@ -571,7 +571,7 @@ func TestClientRetryAllDeadJobsBig(t *testing.T) {
 	// Ok, we need to efficiently add 10k jobs to the dead queue.
 	// I tried using insertDeadJob but it was too slow (increased test time by 1 second)
 	dead := redisKeyDead(ns)
-	for i := 0; i < 10000; i++ {
+	for range 10000 {
 		job := &Job{
 			Name:       "wat1",
 			ID:         makeIdentifier(),

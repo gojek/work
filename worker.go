@@ -2,7 +2,7 @@ package work
 
 import (
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"reflect"
 	"time"
 
@@ -146,7 +146,7 @@ func (w *worker) fetchJob() (*Job, error) {
 	// NOTE: we could optimize this to only resort every second, or something.
 	w.sampler.sample()
 	numKeys := len(w.sampler.samples) * fetchKeysPerJobType
-	var scriptArgs = make([]interface{}, 0, numKeys+1)
+	var scriptArgs = make([]any, 0, numKeys+1)
 
 	for _, s := range w.sampler.samples {
 		scriptArgs = append(scriptArgs, s.redisJobs, s.redisJobsInProg, s.redisJobsPaused, s.redisJobsLock, s.redisJobsLockInfo, s.redisJobsMaxConcurrency) // KEYS[1-6 * N]
@@ -280,7 +280,7 @@ func (w *worker) removeJobFromInProgress(job *Job, fate terminateOp) {
 
 type terminateOp func(conn redis.Conn)
 
-func terminateOnly(_ redis.Conn) { return }
+func terminateOnly(_ redis.Conn) {}
 func terminateAndRetry(w *worker, jt *jobType, job *Job) terminateOp {
 	rawJSON, err := job.serialize()
 	if err != nil {
@@ -323,5 +323,5 @@ func (w *worker) jobFate(jt *jobType, job *Job) terminateOp {
 // Default algorithm returns an fastly increasing backoff counter which grows in an unbounded fashion
 func defaultBackoffCalculator(job *Job) int64 {
 	fails := job.Fails
-	return (fails * fails * fails * fails) + 15 + (rand.Int63n(30) * (fails + 1))
+	return (fails * fails * fails * fails) + 15 + (rand.Int64N(30) * (fails + 1))
 }

@@ -3,21 +3,21 @@ package main
 import (
 	"flag"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"time"
 
 	"github.com/gojek/work"
 	"github.com/gomodule/redigo/redis"
 )
 
-var redisHostPort = flag.String("redis", ":6379", "redis hostport")
+var redisHostPort = flag.String("redis", "redis://:6379", "redis hostport")
 var redisNamespace = flag.String("ns", "work", "redis namespace")
 
 func epsilonHandler(job *work.Job) error {
 	fmt.Println("epsilon")
 	time.Sleep(time.Second)
 
-	if rand.Intn(2) == 0 {
+	if rand.IntN(2) == 0 {
 		return fmt.Errorf("random error")
 	}
 	return nil
@@ -42,7 +42,7 @@ func main() {
 	go func() {
 		for {
 			en := work.NewEnqueuer(*redisNamespace, pool)
-			for i := 0; i < 20; i++ {
+			for i := range 20 {
 				en.Enqueue("foobar", work.Q{"i": i})
 			}
 
