@@ -500,6 +500,9 @@ func newMockTestPool(t testing.TB) (*redis.Pool, *redigomock.Conn) {
 		IdleTimeout: 240 * time.Second,
 		Wait:        true,
 	}
+	t.Cleanup(func() {
+		assert.Nil(t, conn.ExpectationsWereMet())
+	})
 	return pool, conn
 }
 
