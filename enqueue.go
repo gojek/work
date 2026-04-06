@@ -250,7 +250,7 @@ func (e *Enqueuer) BulkEnqueue(params []BulkEnqueueParam) ([]BulkEnqueueResult, 
 		return nil, err
 	}
 
-	var sendHashFailedIndices []int
+	var sendHashFailedIndices []int // extremely rare case, do not pre-allocate
 	for i, j := range jobs {
 		if !j.Unique {
 			if _, err := c.Receive(); err != nil {
@@ -292,15 +292,23 @@ func (e *Enqueuer) BulkEnqueue(params []BulkEnqueueParam) ([]BulkEnqueueResult, 
 			return nil, err
 		}
 	}
+	if err := e.sendWait(c); err != nil {
+		return nil, err
+	}
+
 	if err := c.Flush(); err != nil {
 		return nil, err
 	}
+
 	for _, i := range sendHashFailedIndices {
 		status, err := redis.String(c.Receive())
 		if err != nil {
 			return nil, err
 		}
 		results[i].EnqueueSkipped = status != "ok"
+	}
+	if err := e.receiveWait(c); err != nil {
+		return nil, err
 	}
 
 	return results, nil
