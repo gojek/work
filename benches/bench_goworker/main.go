@@ -11,7 +11,7 @@ import (
 	"github.com/gomodule/redigo/redis"
 )
 
-func myJob(queue string, args ...interface{}) error {
+func myJob(queue string, args ...any) error {
 	atomic.AddInt64(&totcount, 1)
 	//fmt.Println("job! ", queue)
 	return nil
@@ -80,7 +80,7 @@ func enqueueJobs(queue string, count int) {
 	conn := pool.Get()
 	defer conn.Close()
 
-	for i := 0; i < count; i++ {
+	for range count {
 		//workers.Enqueue(queue, "Foo", []int{i})
 		conn.Do("RPUSH", "bench_test:queue:"+queue, `{"class":"MyClass","args":[]}`)
 	}

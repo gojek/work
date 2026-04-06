@@ -38,7 +38,7 @@ func main() {
 
 	numJobs := 40000 / len(queues)
 	for _, q := range queues {
-		for i := 0; i < numJobs; i++ {
+		for i := range numJobs {
 			_, err := q.Schedule(100, time.Now(), i)
 			if err != nil {
 				panic(err)

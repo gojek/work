@@ -1,6 +1,7 @@
 package work
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -127,24 +128,45 @@ func TestEnqueue_WithMock(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			pool, conn := newMockTestPool(t)
-			enqueuer := NewEnqueuerWithOptions(ns, pool, tt.enqueuerOption)
-			if tt.mockLpush != nil {
-				conn.Command("LPUSH", "work:jobs:test", redigomock.NewAnyData()).Expect(*tt.mockLpush)
-			}
-			if tt.mockLpushErr != nil {
-				conn.Command("LPUSH", "work:jobs:test", redigomock.NewAnyData()).ExpectError(tt.mockLpushErr)
-			}
-			if tt.mockWait != nil {
-				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).Expect(*tt.mockWait)
-			}
-			if tt.mockWaitErr != nil {
-				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).ExpectError(tt.mockWaitErr)
-			}
-			conn.Command("SADD", "work:known_jobs", jobName).Expect(1)
+			for _, useBulk := range []bool{true, false} {
+				t.Run(fmt.Sprintf("useBulk %v", useBulk), func(t *testing.T) {
+					pool, conn := newMockTestPool(t)
+					enqueuer := NewEnqueuerWithOptions(ns, pool, tt.enqueuerOption)
+					mckFn := rawJsonMocker(func(job Job) bool {
+						return assert.NotEmpty(t, job.ID) &&
+							assert.Greater(t, job.EnqueuedAt, time.Now().Unix()-10) &&
+							assert.Greater(t, time.Now().Unix()+10, job.EnqueuedAt) &&
+							assert.Equal(t, jobName, job.Name) &&
+							assert.Equal(t, jobArgs, job.Args)
+					})
+					if tt.mockLpush != nil {
+						conn.Command("LPUSH", "work:jobs:test", mckFn).Expect(*tt.mockLpush)
+					}
+					if tt.mockLpushErr != nil {
+						conn.Command("LPUSH", "work:jobs:test", mckFn).ExpectError(tt.mockLpushErr)
+					}
+					if tt.mockWait != nil {
+						conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).Expect(*tt.mockWait)
+					}
+					if tt.mockWaitErr != nil {
+						conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).ExpectError(tt.mockWaitErr)
+					}
+					if useBulk || tt.expectedError == nil {
+						conn.Command("SADD", "work:known_jobs", jobName).Expect(1)
+					}
 
-			_, err := enqueuer.Enqueue(jobName, jobArgs)
-			assert.Equal(t, tt.expectedError, err)
+					var err error
+					if useBulk {
+						_, err = enqueuer.BulkEnqueue([]BulkEnqueueParam{{
+							Name: jobName,
+							Args: jobArgs,
+						}})
+					} else {
+						_, err = enqueuer.Enqueue(jobName, jobArgs)
+					}
+					assert.Equal(t, tt.expectedError, err)
+				})
+			}
 		})
 	}
 }
@@ -272,13 +294,16 @@ func TestEnqueueIn_WithMock(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			pool, conn := newMockTestPool(t)
 			enqueuer := NewEnqueuerWithOptions(ns, pool, tt.enqueuerOption)
+			baseRunAtEpoch := now + secondsFromNow
 			if tt.mockZadd != nil {
-				conn.Command("ZADD", "work:scheduled", now+secondsFromNow, redigomock.NewAnyData()).Expect(*tt.mockZadd)
-				conn.Command("ZADD", "work:scheduled", now+secondsFromNow+1, redigomock.NewAnyData()).Expect(*tt.mockZadd)
+				conn.Command("ZADD", "work:scheduled", mockAsserter(func(a any) bool {
+					return assert.Contains(t, []int64{baseRunAtEpoch, baseRunAtEpoch + 1}, a)
+				}), redigomock.NewAnyData()).Expect(*tt.mockZadd)
 			}
 			if tt.mockZaddErr != nil {
-				conn.Command("ZADD", "work:scheduled", now+secondsFromNow, redigomock.NewAnyData()).ExpectError(tt.mockZaddErr)
-				conn.Command("ZADD", "work:scheduled", now+secondsFromNow+1, redigomock.NewAnyData()).ExpectError(tt.mockZaddErr)
+				conn.Command("ZADD", "work:scheduled", mockAsserter(func(a any) bool {
+					return assert.Contains(t, []int64{baseRunAtEpoch, baseRunAtEpoch + 1}, a)
+				}), redigomock.NewAnyData()).ExpectError(tt.mockZaddErr)
 			}
 			if tt.mockWait != nil {
 				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).Expect(*tt.mockWait)
@@ -286,7 +311,9 @@ func TestEnqueueIn_WithMock(t *testing.T) {
 			if tt.mockWaitErr != nil {
 				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).ExpectError(tt.mockWaitErr)
 			}
-			conn.Command("SADD", "work:known_jobs", jobName).Expect(1)
+			if tt.expectedError == nil {
+				conn.Command("SADD", "work:known_jobs", jobName).Expect(1)
+			}
 
 			_, err := enqueuer.EnqueueIn(jobName, secondsFromNow, jobArgs)
 			assert.Equal(t, tt.expectedError, err)
@@ -402,24 +429,46 @@ func TestEnqueueAt_WithMock(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			pool, conn := newMockTestPool(t)
-			enqueuer := NewEnqueuerWithOptions(ns, pool, tt.enqueuerOption)
-			if tt.mockZadd != nil {
-				conn.Command("ZADD", "work:scheduled", runAt, redigomock.NewAnyData()).Expect(*tt.mockZadd)
-			}
-			if tt.mockZaddErr != nil {
-				conn.Command("ZADD", "work:scheduled", runAt, redigomock.NewAnyData()).ExpectError(tt.mockZaddErr)
-			}
-			if tt.mockWait != nil {
-				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).Expect(*tt.mockWait)
-			}
-			if tt.mockWaitErr != nil {
-				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).ExpectError(tt.mockWaitErr)
-			}
-			conn.Command("SADD", "work:known_jobs", jobName).Expect(1)
+			for _, useBulk := range []bool{true, false} {
+				t.Run(fmt.Sprintf("useBulk %v", useBulk), func(t *testing.T) {
+					pool, conn := newMockTestPool(t)
+					enqueuer := NewEnqueuerWithOptions(ns, pool, tt.enqueuerOption)
+					mckFn := rawJsonMocker(func(job Job) bool {
+						return assert.NotEmpty(t, job.ID) &&
+							assert.Greater(t, job.EnqueuedAt, time.Now().Unix()-10) &&
+							assert.Greater(t, time.Now().Unix()+10, job.EnqueuedAt) &&
+							assert.Equal(t, jobName, job.Name) &&
+							assert.Equal(t, jobArgs, job.Args)
+					})
+					if tt.mockZadd != nil {
+						conn.Command("ZADD", "work:scheduled", runAt, mckFn).Expect(*tt.mockZadd)
+					}
+					if tt.mockZaddErr != nil {
+						conn.Command("ZADD", "work:scheduled", runAt, mckFn).ExpectError(tt.mockZaddErr)
+					}
+					if tt.mockWait != nil {
+						conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).Expect(*tt.mockWait)
+					}
+					if tt.mockWaitErr != nil {
+						conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).ExpectError(tt.mockWaitErr)
+					}
+					if useBulk || tt.expectedError == nil {
+						conn.Command("SADD", "work:known_jobs", jobName).Expect(1)
+					}
 
-			_, err := enqueuer.EnqueueAt(jobName, runAt, jobArgs)
-			assert.Equal(t, tt.expectedError, err)
+					var err error
+					if useBulk {
+						_, err = enqueuer.BulkEnqueue([]BulkEnqueueParam{{
+							Name:       jobName,
+							Args:       jobArgs,
+							RunAtEpoch: runAt,
+						}})
+					} else {
+						_, err = enqueuer.EnqueueAt(jobName, runAt, jobArgs)
+					}
+					assert.Equal(t, tt.expectedError, err)
+				})
+			}
 		})
 	}
 }
@@ -500,6 +549,215 @@ func TestEnqueueUnique(t *testing.T) {
 	assert.NotNil(t, job)
 }
 
+func TestBulkEnqueue(t *testing.T) {
+	pool := newTestPool(t)
+	ns := "work"
+	cleanKeyspace(ns, pool)
+	enqueuer := NewEnqueuer(ns, pool)
+	results, err := enqueuer.BulkEnqueue([]BulkEnqueueParam{{
+		Name: "wat",
+		Args: Q{"a": 1, "b": "cool"},
+	}, {
+		Name:   "wat",
+		Unique: true,
+		Args:   Q{"a": 1, "b": "cool"},
+	}, {
+		Name:   "wat",
+		Unique: true,
+		Args:   Q{"a": 1, "b": "cool"},
+	}, {
+		Name:       "wat2",
+		Args:       Q{"a": 1, "b": "cool"},
+		RunAtEpoch: time.Now().Unix() + 20,
+	}, {
+		Name:   "taw",
+		Unique: true,
+		Args:   Q{"a": 1, "b": "cool"},
+	}})
+	assert.NoError(t, err)
+	assert.False(t, results[0].EnqueueSkipped)
+	assert.Empty(t, results[0].UniqueKey)
+	assert.False(t, results[1].EnqueueSkipped)
+	assert.NotEmpty(t, results[1].UniqueKey)
+	assert.True(t, results[2].EnqueueSkipped)
+	assert.NotEmpty(t, results[2].UniqueKey)
+	assert.False(t, results[3].EnqueueSkipped)
+	assert.Empty(t, results[3].UniqueKey)
+	assert.False(t, results[4].EnqueueSkipped)
+	assert.NotEmpty(t, results[4].UniqueKey)
+
+	c := pool.Get()
+	defer c.Close()
+	_, err = c.Do("SCRIPT", "FLUSH")
+	assert.NoError(t, err)
+	// Should succeed
+	results, err = enqueuer.BulkEnqueue([]BulkEnqueueParam{{
+		Name: "wat",
+		Args: Q{"a": 1, "b": "cool"},
+	}, {
+		Name:   "wat",
+		Unique: true,
+		Args:   Q{"a": 1, "b": "cool"},
+	}, {
+		Name:   "wat",
+		Unique: true,
+		Args:   Q{"a": 1, "b": "cool"},
+	}, {
+		Name:       "wat2",
+		Args:       Q{"a": 1, "b": "cool"},
+		RunAtEpoch: time.Now().Unix() + 20,
+	}, {
+		Name:   "taw",
+		Unique: true,
+		Args:   Q{"a": 1, "b": "cool"},
+	}})
+	assert.NoError(t, err)
+	assert.False(t, results[0].EnqueueSkipped)
+	assert.Empty(t, results[0].UniqueKey)
+	assert.True(t, results[1].EnqueueSkipped)
+	assert.NotEmpty(t, results[1].UniqueKey)
+	assert.True(t, results[2].EnqueueSkipped)
+	assert.NotEmpty(t, results[2].UniqueKey)
+	assert.False(t, results[3].EnqueueSkipped)
+	assert.Empty(t, results[3].UniqueKey)
+	assert.True(t, results[4].EnqueueSkipped)
+	assert.NotEmpty(t, results[4].UniqueKey)
+
+}
+
+func TestBulkEnqueue_WithMock(t *testing.T) {
+	//var one int64 = 1
+	ns := "work"
+	pool, conn := newMockTestPool(t)
+	now := time.Now().Unix()
+	enqueuer := NewEnqueuerWithOptions(ns, pool, EnqueuerOption{
+		MinWaitReplicas:  1,
+		MaxWaitTimeoutMS: 1000,
+	})
+
+	conn.Command("LPUSH", "work:jobs:wat", rawJsonMocker(func(job Job) bool {
+		return job.Name == "wat" &&
+			len(job.Args) == 1 && job.Args["a"] == "1" &&
+			job.EnqueuedAt >= now && job.EnqueuedAt <= now+2 &&
+			!job.Unique && job.UniqueKey == ""
+	})).Expect(1)
+	conn.Command("EVALSHA", "f38b6aef74017e799294b1ec4b74eb707deb0c17", 2, "work:jobs:wat", "work:unique:wat:{\"a\":\"2\"}\n", rawJsonMocker(func(job Job) bool {
+		return job.Name == "wat" &&
+			len(job.Args) == 1 && job.Args["a"] == "2" &&
+			job.EnqueuedAt >= now && job.EnqueuedAt <= now+2 &&
+			job.Unique && job.UniqueKey == "work:unique:wat:{\"a\":\"2\"}\n"
+	}), "1").Expect("ok")
+	conn.Command("EVALSHA", "7b32230026d2ba0d5aa0b5451237f6c086e3072c", 2, "work:scheduled", "work:unique:wat:{\"a\":\"3\"}\n", rawJsonMocker(func(job Job) bool {
+		return job.Name == "wat" &&
+			len(job.Args) == 1 && job.Args["a"] == "3" &&
+			job.EnqueuedAt >= now && job.EnqueuedAt <= now+2 &&
+			job.Unique && job.UniqueKey == "work:unique:wat:{\"a\":\"3\"}\n"
+	}), "1", now+15).Expect("dup")
+	conn.Command("EVALSHA", "7b32230026d2ba0d5aa0b5451237f6c086e3072c", 2, "work:scheduled", "work:unique:wat:{\"a\":\"4\"}\n", rawJsonMocker(func(job Job) bool {
+		return job.Name == "wat" &&
+			len(job.Args) == 1 && job.Args["a"] == "4" &&
+			job.EnqueuedAt >= now && job.EnqueuedAt <= now+2 &&
+			job.Unique && job.UniqueKey == "work:unique:wat:{\"a\":\"4\"}\n"
+	}), "1", now+15).ExpectError(errors.New(`NOSCRIPT No matching script. Please use EVAL.`))
+	conn.Command("ZADD", "work:scheduled", now+20, rawJsonMocker(func(job Job) bool {
+		return job.Name == "wat2" &&
+			len(job.Args) == 1 && job.Args["a"] == "5" &&
+			job.EnqueuedAt >= now && job.EnqueuedAt <= now+2 &&
+			!job.Unique && job.UniqueKey == ""
+	})).Expect(1)
+	conn.Command("EVALSHA", "f38b6aef74017e799294b1ec4b74eb707deb0c17", 2, "work:jobs:taw", "work:unique:taw:{\"b\":\"6b\"}\n", rawJsonMocker(func(job Job) bool {
+		return job.Name == "taw" &&
+			len(job.Args) == 1 && job.Args["a"] == "6" &&
+			job.EnqueuedAt >= now && job.EnqueuedAt <= now+2 &&
+			job.Unique && job.UniqueKey == "work:unique:taw:{\"b\":\"6b\"}\n"
+	}), rawJsonMocker(func(job Job) bool {
+		return job.Name == "taw" &&
+			len(job.Args) == 1 && job.Args["a"] == "6" &&
+			job.EnqueuedAt >= now && job.EnqueuedAt <= now+2 &&
+			job.Unique && job.UniqueKey == "work:unique:taw:{\"b\":\"6b\"}\n"
+	})).ExpectError(errors.New(`NOSCRIPT No matching script. Please use EVAL.`))
+	knownJobs := make(map[string]int)
+	knownJobCounter := mockAsserter(func(a any) bool {
+		knownJobs[a.(string)]++
+		return true
+	})
+	conn.Command("SADD", "work:known_jobs", knownJobCounter, knownJobCounter, knownJobCounter).Expect(3)
+	waitCounter := 0
+	conn.Command("WAIT", 1, mockAsserter(func(a any) bool {
+		waitCounter++
+		return a.(int) == 1000
+	})).Expect(int64(2))
+	conn.Command("EVAL", redisLuaEnqueueUniqueIn, 2, "work:scheduled", "work:unique:wat:{\"a\":\"4\"}\n", rawJsonMocker(func(job Job) bool {
+		return job.Name == "wat" &&
+			len(job.Args) == 1 && job.Args["a"] == "4" &&
+			job.EnqueuedAt >= now && job.EnqueuedAt <= now+2 &&
+			job.Unique && job.UniqueKey == "work:unique:wat:{\"a\":\"4\"}\n"
+	}), "1", now+15).Expect("ok")
+	conn.Command("EVAL", redisLuaEnqueueUnique, 2, "work:jobs:taw", "work:unique:taw:{\"b\":\"6b\"}\n", rawJsonMocker(func(job Job) bool {
+		return job.Name == "taw" &&
+			len(job.Args) == 1 && job.Args["a"] == "6" &&
+			job.EnqueuedAt >= now && job.EnqueuedAt <= now+2 &&
+			job.Unique && job.UniqueKey == "work:unique:taw:{\"b\":\"6b\"}\n"
+	}), rawJsonMocker(func(job Job) bool {
+		return job.Name == "taw" &&
+			len(job.Args) == 1 && job.Args["a"] == "6" &&
+			job.EnqueuedAt >= now && job.EnqueuedAt <= now+2 &&
+			job.Unique && job.UniqueKey == "work:unique:taw:{\"b\":\"6b\"}\n"
+	})).Expect("dup")
+
+	results, err := enqueuer.BulkEnqueue([]BulkEnqueueParam{{
+		Name: "wat",
+		Args: Q{"a": "1"},
+	}, {
+		Name:   "wat",
+		Unique: true,
+		Args:   Q{"a": "2"},
+	}, {
+		Name:       "wat",
+		Unique:     true,
+		Args:       Q{"a": "3"},
+		RunAtEpoch: now + 15,
+	}, {
+		Name:       "wat",
+		Unique:     true,
+		Args:       Q{"a": "4"},
+		RunAtEpoch: now + 15,
+	}, {
+		Name:       "wat2",
+		Args:       Q{"a": "5"},
+		RunAtEpoch: now + 20,
+	}, {
+		Name:         "taw",
+		Unique:       true,
+		UniqueKeyMap: Q{"b": "6b"},
+		Args:         Q{"a": "6"},
+	}})
+	assert.NoError(t, err)
+	for i := range results {
+		assert.NotEmpty(t, results[i].ID)
+		assert.GreaterOrEqual(t, results[i].EnqueuedAt, now)
+		assert.LessOrEqual(t, results[i].EnqueuedAt, now+2)
+		// simplify further assertions
+		results[i].ID = ""
+		results[i].EnqueuedAt = 0
+	}
+	assert.Equal(t, []BulkEnqueueResult{
+		{},
+		{UniqueKey: "work:unique:wat:{\"a\":\"2\"}\n"},
+		{UniqueKey: "work:unique:wat:{\"a\":\"3\"}\n", EnqueueSkipped: true},
+		{UniqueKey: "work:unique:wat:{\"a\":\"4\"}\n"},
+		{},
+		{UniqueKey: "work:unique:taw:{\"b\":\"6b\"}\n", EnqueueSkipped: true},
+	}, results)
+
+	assert.Equal(t, map[string]int{
+		"wat": 1, "wat2": 1, "taw": 1,
+	}, knownJobs)
+	assert.Equal(t, 2, waitCounter) // one for initial attempt, second for evalsha fallback
+	assert.NoError(t, conn.ExpectationsWereMet())
+
+}
+
 func TestEnqueueUnique_WithMock(t *testing.T) {
 	ns := "work"
 	jobName := "test"
@@ -575,26 +833,48 @@ func TestEnqueueUnique_WithMock(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			pool, conn := newMockTestPool(t)
-			enqueuer := NewEnqueuerWithOptions(ns, pool, tt.enqueuerOption)
-			uniqueKey := `work:unique:test:{"arg":"value"}
+			for _, useBulk := range []bool{true, false} {
+				t.Run(fmt.Sprintf("useBulk %v", useBulk), func(t *testing.T) {
+					pool, conn := newMockTestPool(t)
+					enqueuer := NewEnqueuerWithOptions(ns, pool, tt.enqueuerOption)
+					uniqueKey := `work:unique:test:{"arg":"value"}
 `
-			if tt.mockLEvalsha != nil {
-				conn.Command("EVALSHA", "f38b6aef74017e799294b1ec4b74eb707deb0c17", 2, "work:jobs:test", uniqueKey, redigomock.NewAnyData(), "1").Expect(*tt.mockLEvalsha)
-			}
-			if tt.mockLEvalshaErr != nil {
-				conn.Command("EVALSHA", "f38b6aef74017e799294b1ec4b74eb707deb0c17", 2, "work:jobs:test", uniqueKey, redigomock.NewAnyData(), "1").ExpectError(tt.mockLEvalshaErr)
-			}
-			if tt.mockWait != nil {
-				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).Expect(*tt.mockWait)
-			}
-			if tt.mockWaitErr != nil {
-				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).ExpectError(tt.mockWaitErr)
-			}
-			conn.Command("SADD", "work:known_jobs", jobName).Expect(1)
+					mckFn := rawJsonMocker(func(job Job) bool {
+						return assert.NotEmpty(t, job.ID) &&
+							assert.Greater(t, job.EnqueuedAt, time.Now().Unix()-10) &&
+							assert.Greater(t, time.Now().Unix()+10, job.EnqueuedAt) &&
+							assert.Equal(t, jobName, job.Name) &&
+							assert.Equal(t, jobArgs, job.Args) &&
+							assert.True(t, job.Unique) &&
+							assert.Equal(t, uniqueKey, job.UniqueKey)
+					})
+					if tt.mockLEvalsha != nil {
+						conn.Command("EVALSHA", "f38b6aef74017e799294b1ec4b74eb707deb0c17", 2, "work:jobs:test", uniqueKey, mckFn, "1").Expect(*tt.mockLEvalsha)
+					}
+					if tt.mockLEvalshaErr != nil {
+						conn.Command("EVALSHA", "f38b6aef74017e799294b1ec4b74eb707deb0c17", 2, "work:jobs:test", uniqueKey, mckFn, "1").ExpectError(tt.mockLEvalshaErr)
+					}
+					if tt.mockWait != nil {
+						conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).Expect(*tt.mockWait)
+					}
+					if tt.mockWaitErr != nil {
+						conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).ExpectError(tt.mockWaitErr)
+					}
+					conn.Command("SADD", "work:known_jobs", jobName).Expect(1)
 
-			_, err := enqueuer.EnqueueUnique(jobName, jobArgs)
-			assert.Equal(t, tt.expectedError, err)
+					var err error
+					if useBulk {
+						_, err = enqueuer.BulkEnqueue([]BulkEnqueueParam{{
+							Name:   jobName,
+							Args:   jobArgs,
+							Unique: true,
+						}})
+					} else {
+						_, err = enqueuer.EnqueueUnique(jobName, jobArgs)
+					}
+					assert.Equal(t, tt.expectedError, err)
+				})
+			}
 		})
 	}
 }
@@ -920,26 +1200,49 @@ func TestEnqueueUniqueByKey_WithMock(t *testing.T) {
 
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			pool, conn := newMockTestPool(t)
-			enqueuer := NewEnqueuerWithOptions(ns, pool, tt.enqueuerOption)
-			uniqueKey := `work:unique:test:{"key":"value"}
+			for _, useBulk := range []bool{true, false} {
+				t.Run(fmt.Sprintf("useBulk %v", useBulk), func(t *testing.T) {
+					pool, conn := newMockTestPool(t)
+					enqueuer := NewEnqueuerWithOptions(ns, pool, tt.enqueuerOption)
+					uniqueKey := `work:unique:test:{"key":"value"}
 `
-			if tt.mockLEvalsha != nil {
-				conn.Command("EVALSHA", "f38b6aef74017e799294b1ec4b74eb707deb0c17", 2, "work:jobs:test", uniqueKey, redigomock.NewAnyData(), redigomock.NewAnyData()).Expect(*tt.mockLEvalsha)
-			}
-			if tt.mockLEvalshaErr != nil {
-				conn.Command("EVALSHA", "f38b6aef74017e799294b1ec4b74eb707deb0c17", 2, "work:jobs:test", uniqueKey, redigomock.NewAnyData(), redigomock.NewAnyData()).ExpectError(tt.mockLEvalshaErr)
-			}
-			if tt.mockWait != nil {
-				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).Expect(*tt.mockWait)
-			}
-			if tt.mockWaitErr != nil {
-				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).ExpectError(tt.mockWaitErr)
-			}
-			conn.Command("SADD", "work:known_jobs", jobName).Expect(1)
+					mckFn := rawJsonMocker(func(job Job) bool {
+						return assert.NotEmpty(t, job.ID) &&
+							assert.Greater(t, job.EnqueuedAt, time.Now().Unix()-10) &&
+							assert.Greater(t, time.Now().Unix()+10, job.EnqueuedAt) &&
+							assert.Equal(t, jobName, job.Name) &&
+							assert.Equal(t, jobArgs, job.Args) &&
+							assert.True(t, job.Unique) &&
+							assert.Equal(t, uniqueKey, job.UniqueKey)
+					})
+					if tt.mockLEvalsha != nil {
+						conn.Command("EVALSHA", "f38b6aef74017e799294b1ec4b74eb707deb0c17", 2, "work:jobs:test", uniqueKey, mckFn, mckFn).Expect(*tt.mockLEvalsha)
+					}
+					if tt.mockLEvalshaErr != nil {
+						conn.Command("EVALSHA", "f38b6aef74017e799294b1ec4b74eb707deb0c17", 2, "work:jobs:test", uniqueKey, mckFn, mckFn).ExpectError(tt.mockLEvalshaErr)
+					}
+					if tt.mockWait != nil {
+						conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).Expect(*tt.mockWait)
+					}
+					if tt.mockWaitErr != nil {
+						conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).ExpectError(tt.mockWaitErr)
+					}
+					conn.Command("SADD", "work:known_jobs", jobName).Expect(1)
 
-			_, err := enqueuer.EnqueueUniqueByKey(jobName, jobArgs, jobKeyMap)
-			assert.Equal(t, tt.expectedError, err)
+					var err error
+					if useBulk {
+						_, err = enqueuer.BulkEnqueue([]BulkEnqueueParam{{
+							Name:         jobName,
+							Args:         jobArgs,
+							Unique:       true,
+							UniqueKeyMap: jobKeyMap,
+						}})
+					} else {
+						_, err = enqueuer.EnqueueUniqueByKey(jobName, jobArgs, jobKeyMap)
+					}
+					assert.Equal(t, tt.expectedError, err)
+				})
+			}
 		})
 	}
 }
@@ -1039,24 +1342,46 @@ func TestEnqueueUniqueAt_WithMock(t *testing.T) {
 		// uniqueKey same as EnqueueUnique test (args based)
 		uniqueKey := "work:unique:test:{\"arg\":\"value\"}\n"
 		t.Run(tt.name, func(t *testing.T) {
-			pool, conn := newMockTestPool(t)
-			enqueuer := NewEnqueuerWithOptions(ns, pool, tt.enqueuerOption)
-			if tt.mockLEvalsha != nil {
-				conn.Command("EVALSHA", "7b32230026d2ba0d5aa0b5451237f6c086e3072c", 2, "work:scheduled", uniqueKey, redigomock.NewAnyData(), "1", runAt).Expect(*tt.mockLEvalsha)
+			for _, useBulk := range []bool{true, false} {
+				t.Run(fmt.Sprintf("useBulk %v", useBulk), func(t *testing.T) {
+					pool, conn := newMockTestPool(t)
+					enqueuer := NewEnqueuerWithOptions(ns, pool, tt.enqueuerOption)
+					mckFn := rawJsonMocker(func(job Job) bool {
+						return assert.NotEmpty(t, job.ID) &&
+							assert.Greater(t, job.EnqueuedAt, time.Now().Unix()-10) &&
+							assert.Greater(t, time.Now().Unix()+10, job.EnqueuedAt) &&
+							assert.Equal(t, jobName, job.Name) &&
+							assert.Equal(t, jobArgs, job.Args) &&
+							assert.True(t, job.Unique) &&
+							assert.Equal(t, uniqueKey, job.UniqueKey)
+					})
+					if tt.mockLEvalsha != nil {
+						conn.Command("EVALSHA", "7b32230026d2ba0d5aa0b5451237f6c086e3072c", 2, "work:scheduled", uniqueKey, mckFn, "1", runAt).Expect(*tt.mockLEvalsha)
+					}
+					if tt.mockLEvalshaErr != nil {
+						conn.Command("EVALSHA", "7b32230026d2ba0d5aa0b5451237f6c086e3072c", 2, "work:scheduled", uniqueKey, mckFn, "1", runAt).ExpectError(tt.mockLEvalshaErr)
+					}
+					if tt.mockWait != nil {
+						conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).Expect(*tt.mockWait)
+					}
+					if tt.mockWaitErr != nil {
+						conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).ExpectError(tt.mockWaitErr)
+					}
+					conn.Command("SADD", "work:known_jobs", jobName).Expect(1)
+					var err error
+					if useBulk {
+						_, err = enqueuer.BulkEnqueue([]BulkEnqueueParam{{
+							Name:       jobName,
+							Args:       jobArgs,
+							RunAtEpoch: runAt,
+							Unique:     true,
+						}})
+					} else {
+						_, err = enqueuer.EnqueueUniqueAt(jobName, runAt, jobArgs)
+					}
+					assert.Equal(t, tt.expectedError, err)
+				})
 			}
-			if tt.mockLEvalshaErr != nil {
-				conn.Command("EVALSHA", "7b32230026d2ba0d5aa0b5451237f6c086e3072c", 2, "work:scheduled", uniqueKey, redigomock.NewAnyData(), "1", runAt).ExpectError(tt.mockLEvalshaErr)
-			}
-			if tt.mockWait != nil {
-				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).Expect(*tt.mockWait)
-			}
-			if tt.mockWaitErr != nil {
-				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).ExpectError(tt.mockWaitErr)
-			}
-			conn.Command("SADD", "work:known_jobs", jobName).Expect(1)
-
-			_, err := enqueuer.EnqueueUniqueAt(jobName, runAt, jobArgs)
-			assert.Equal(t, tt.expectedError, err)
 		})
 	}
 }
@@ -1296,24 +1621,72 @@ func TestEnqueueUniqueAtByKey_WithMock(t *testing.T) {
 	for _, tt := range cases {
 		uniqueKey := "work:unique:test:{\"key\":\"value\"}\n"
 		t.Run(tt.name, func(t *testing.T) {
-			pool, conn := newMockTestPool(t)
-			enqueuer := NewEnqueuerWithOptions(ns, pool, tt.enqueuerOption)
-			if tt.mockLEvalsha != nil {
-				conn.Command("EVALSHA", "7b32230026d2ba0d5aa0b5451237f6c086e3072c", 2, "work:scheduled", uniqueKey, redigomock.NewAnyData(), redigomock.NewAnyData(), runAt).Expect(*tt.mockLEvalsha)
-			}
-			if tt.mockLEvalshaErr != nil {
-				conn.Command("EVALSHA", "7b32230026d2ba0d5aa0b5451237f6c086e3072c", 2, "work:scheduled", uniqueKey, redigomock.NewAnyData(), redigomock.NewAnyData(), runAt).ExpectError(tt.mockLEvalshaErr)
-			}
-			if tt.mockWait != nil {
-				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).Expect(*tt.mockWait)
-			}
-			if tt.mockWaitErr != nil {
-				conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).ExpectError(tt.mockWaitErr)
-			}
-			conn.Command("SADD", "work:known_jobs", jobName).Expect(1)
+			for _, useBulk := range []bool{true, false} {
+				t.Run(fmt.Sprintf("useBulk %v", useBulk), func(t *testing.T) {
+					pool, conn := newMockTestPool(t)
+					enqueuer := NewEnqueuerWithOptions(ns, pool, tt.enqueuerOption)
+					mckFn := rawJsonMocker(func(job Job) bool {
+						return assert.NotEmpty(t, job.ID) &&
+							assert.Greater(t, job.EnqueuedAt, time.Now().Unix()-10) &&
+							assert.Greater(t, time.Now().Unix()+10, job.EnqueuedAt) &&
+							assert.Equal(t, jobName, job.Name) &&
+							assert.Equal(t, jobArgs, job.Args) &&
+							assert.True(t, job.Unique) &&
+							assert.Equal(t, uniqueKey, job.UniqueKey)
+					})
+					if tt.mockLEvalsha != nil {
+						conn.Command("EVALSHA", "7b32230026d2ba0d5aa0b5451237f6c086e3072c", 2, "work:scheduled", uniqueKey, mckFn, mckFn, runAt).Expect(*tt.mockLEvalsha)
+					}
+					if tt.mockLEvalshaErr != nil {
+						conn.Command("EVALSHA", "7b32230026d2ba0d5aa0b5451237f6c086e3072c", 2, "work:scheduled", uniqueKey, mckFn, mckFn, runAt).ExpectError(tt.mockLEvalshaErr)
+					}
+					if tt.mockWait != nil {
+						conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).Expect(*tt.mockWait)
+					}
+					if tt.mockWaitErr != nil {
+						conn.Command("WAIT", tt.enqueuerOption.MinWaitReplicas, tt.enqueuerOption.MaxWaitTimeoutMS).ExpectError(tt.mockWaitErr)
+					}
+					conn.Command("SADD", "work:known_jobs", jobName).Expect(1)
 
-			_, err := enqueuer.EnqueueUniqueAtByKey(jobName, runAt, jobArgs, jobKeyMap)
-			assert.Equal(t, tt.expectedError, err)
+					var err error
+					if useBulk {
+						_, err = enqueuer.BulkEnqueue([]BulkEnqueueParam{{
+							Name:         jobName,
+							Args:         jobArgs,
+							RunAtEpoch:   runAt,
+							Unique:       true,
+							UniqueKeyMap: jobKeyMap,
+						}})
+					} else {
+						_, err = enqueuer.EnqueueUniqueAtByKey(jobName, runAt, jobArgs, jobKeyMap)
+					}
+					assert.Equal(t, tt.expectedError, err)
+
+				})
+			}
 		})
 	}
+}
+
+type mockAsserter func(any) bool
+
+func (m mockAsserter) Match(a any) bool {
+	return m(a)
+}
+
+var _ redigomock.FuzzyMatcher = (*mockAsserter)(nil)
+
+func rawJsonMocker(f func(Job) bool) redigomock.FuzzyMatcher {
+	return mockAsserter(func(v any) bool {
+		jobBytes, ok := v.([]byte)
+		if !ok {
+			return false
+		}
+		var j Job
+		err := json.Unmarshal(jobBytes, &j)
+		if err != nil {
+			return false
+		}
+		return f(j)
+	})
 }

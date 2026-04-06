@@ -2,6 +2,7 @@ package work
 
 import (
 	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,6 +28,25 @@ type Enqueuer struct {
 type EnqueuerOption struct {
 	MinWaitReplicas  int // MinWaitReplicas is passed as numreplicas in redis wait command, if zero then skips wait command altogether
 	MaxWaitTimeoutMS int // MaxWaitTimeoutMS is passed as timeout in redis wait command
+}
+
+// BulkEnqueueParam is a struct that specifies parameters for bulk enqueueing. See BulkEnqueue.
+type BulkEnqueueParam struct {
+	Name string
+	Args map[string]any
+
+	RunAtEpoch int64
+
+	Unique       bool
+	UniqueKeyMap map[string]any // Will only be used if Unique is true
+}
+
+// BulkEnqueueResult is a struct that specifies the result of bulk enqueueing for a single job. See BulkEnqueue.
+type BulkEnqueueResult struct {
+	ID             string
+	EnqueuedAt     int64
+	EnqueueSkipped bool
+	UniqueKey      string
 }
 
 // NewEnqueuer creates a new enqueuer with the specified Redis namespace and Redis pool.
@@ -182,6 +202,142 @@ func (e *Enqueuer) EnqueueUniqueAtByKey(jobName string, epochSeconds int64, args
 	return nil, err
 }
 
+// BulkEnqueue is a more efficient way to enqueue many jobs at once.
+// It takes in a slice of BulkEnqueueParam and returns a slice of BulkEnqueueResult.
+// The order of the results corresponds to the order of the params.
+func (e *Enqueuer) BulkEnqueue(params []BulkEnqueueParam) ([]BulkEnqueueResult, error) {
+	jobs := make([]Job, len(params))
+	results := make([]BulkEnqueueResult, len(jobs))
+	var err error
+
+	epochSeconds := nowEpochSeconds()
+	for i, p := range params {
+		jobs[i], results[i], err = p.buildJobAndResult(e.Namespace, epochSeconds)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	c := e.Pool.Get()
+	defer c.Close()
+
+	for i := range params {
+		p, j := params[i], jobs[i]
+
+		switch {
+		case p.Unique:
+			script, args := e.bulkUniqueHelper(p, j)
+			if err := script.SendHash(c, args...); err != nil {
+				return nil, err
+			}
+		case p.RunAtEpoch != 0:
+			if err := c.Send("ZADD", redisKeyScheduled(e.Namespace), p.RunAtEpoch, j.rawJSON); err != nil {
+				return nil, err
+			}
+		default:
+			if err := c.Send("LPUSH", e.queuePrefix+p.Name, j.rawJSON); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	knownJobReceiver := e.sendBulkKnownJobs(c, params)
+
+	if err := e.sendWait(c); err != nil {
+		return nil, err
+	}
+	if err := c.Flush(); err != nil {
+		return nil, err
+	}
+
+	var sendHashFailedIndices []int // extremely rare case, do not pre-allocate
+	for i, j := range jobs {
+		if !j.Unique {
+			if _, err := c.Receive(); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		status, err := redis.String(c.Receive())
+		if err != nil {
+			if strings.Contains(err.Error(), "NOSCRIPT ") {
+				sendHashFailedIndices = append(sendHashFailedIndices, i)
+				continue
+			}
+			return nil, err
+		}
+
+		results[i].EnqueueSkipped = status != "ok"
+	}
+
+	if knownJobReceiver != nil {
+		if err := knownJobReceiver(); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := e.receiveWait(c); err != nil {
+		return nil, err
+	}
+
+	if len(sendHashFailedIndices) == 0 {
+		return results, nil
+	}
+
+	for _, i := range sendHashFailedIndices {
+		p, j := params[i], jobs[i]
+		script, args := e.bulkUniqueHelper(p, j)
+		if err := script.Send(c, args...); err != nil {
+			return nil, err
+		}
+	}
+	if err := e.sendWait(c); err != nil {
+		return nil, err
+	}
+
+	if err := c.Flush(); err != nil {
+		return nil, err
+	}
+
+	for _, i := range sendHashFailedIndices {
+		status, err := redis.String(c.Receive())
+		if err != nil {
+			return nil, err
+		}
+		results[i].EnqueueSkipped = status != "ok"
+	}
+	if err := e.receiveWait(c); err != nil {
+		return nil, err
+	}
+
+	return results, nil
+}
+
+func (e *Enqueuer) bulkUniqueHelper(p BulkEnqueueParam, j Job) (*redis.Script, []any) {
+	var updatedArg any = "1" // skips updating args
+	if p.UniqueKeyMap != nil {
+		updatedArg = j.rawJSON
+	}
+
+	if p.RunAtEpoch != 0 {
+		return e.enqueueUniqueInScript, []any{
+			redisKeyScheduled(e.Namespace),
+			j.UniqueKey,
+			j.rawJSON,
+			updatedArg,
+			p.RunAtEpoch,
+		}
+	}
+
+	return e.enqueueUniqueScript, []any{
+		e.queuePrefix + j.Name,
+		j.UniqueKey,
+		j.rawJSON,
+		updatedArg,
+	}
+}
+
 func (e *Enqueuer) addToKnownJobs(conn redis.Conn, jobName string) error {
 	needSadd := true
 	now := time.Now().Unix()
@@ -206,6 +362,48 @@ func (e *Enqueuer) addToKnownJobs(conn redis.Conn, jobName string) error {
 	}
 
 	return nil
+}
+
+func (e *Enqueuer) sendBulkKnownJobs(conn redis.Conn, params []BulkEnqueueParam) func() error {
+	pendingJobNames := map[string]struct{}{}
+	now := time.Now().Unix()
+	e.mtx.RLock()
+	for _, j := range params {
+		t, ok := e.knownJobs[j.Name]
+		if !ok || t < now {
+			pendingJobNames[j.Name] = struct{}{}
+		}
+	}
+	e.mtx.RUnlock()
+
+	if len(pendingJobNames) == 0 {
+		return nil
+	}
+
+	args := make([]any, 1, len(pendingJobNames)+1)
+	args[0] = redisKeyKnownJobs(e.Namespace)
+	for job := range pendingJobNames {
+		args = append(args, job)
+	}
+
+	if err := conn.Send("SADD", args...); err != nil {
+		return func() error {
+			return err // defer returning error
+		}
+	}
+
+	return func() error {
+		if _, err := conn.Receive(); err != nil {
+			return err
+		}
+
+		e.mtx.Lock()
+		for jobName := range pendingJobNames {
+			e.knownJobs[jobName] = now + 300
+		}
+		e.mtx.Unlock()
+		return nil
+	}
 }
 
 type enqueueFnType func(*int64) (string, error)
@@ -271,7 +469,7 @@ func (e *Enqueuer) uniqueJobHelper(jobName string, args map[string]any, keyMap m
 		if err != nil {
 			return "", err
 		}
-		if e.Option.MinWaitReplicas > 0 {
+		if e.MinWaitEnabled() {
 			numReplicas, err := redis.Int(conn.Do("WAIT", e.Option.MinWaitReplicas, e.Option.MaxWaitTimeoutMS))
 			if err != nil {
 				return "", err
@@ -286,30 +484,85 @@ func (e *Enqueuer) uniqueJobHelper(jobName string, args map[string]any, keyMap m
 	return enqueueFn, job, nil
 }
 
+func (e *Enqueuer) MinWaitEnabled() bool {
+	return e.Option.MinWaitReplicas > 0
+}
+
 func (e *Enqueuer) redisDoHelper(c redis.Conn, cmdName string, args ...any) (reply any, err error) {
 	if err = c.Send(cmdName, args...); err != nil {
 		return
 	}
-	if e.Option.MinWaitReplicas > 0 {
-		if err = c.Send("WAIT", e.Option.MinWaitReplicas, e.Option.MaxWaitTimeoutMS); err != nil {
-			return
-		}
+	if err = e.sendWait(c); err != nil {
+		return
 	}
 
-	c.Flush()
+	if err = c.Flush(); err != nil {
+		return
+	}
 
 	reply, err = c.Receive()
 	if err != nil {
 		return
 	}
-	if e.Option.MinWaitReplicas > 0 {
-		var numReplicas int
-		if numReplicas, err = redis.Int(c.Receive()); err != nil {
-			return
-		}
-		if numReplicas < e.Option.MinWaitReplicas {
-			err = ErrReplicationFailed
-		}
-	}
+	err = e.receiveWait(c)
 	return
+}
+
+func (e *Enqueuer) sendWait(c redis.Conn) error {
+	if !e.MinWaitEnabled() {
+		return nil
+	}
+
+	return c.Send("WAIT", e.Option.MinWaitReplicas, e.Option.MaxWaitTimeoutMS)
+}
+
+func (e *Enqueuer) receiveWait(c redis.Conn) error {
+	if !e.MinWaitEnabled() {
+		return nil
+	}
+
+	numReplicas, err := redis.Int(c.Receive())
+	if err != nil {
+		return err
+	}
+	if numReplicas < e.Option.MinWaitReplicas {
+		return ErrReplicationFailed
+	}
+	return nil
+}
+
+func (p BulkEnqueueParam) buildJobAndResult(namespace string, epochSeconds int64) (Job, BulkEnqueueResult, error) {
+	uniqueKey, err := p.buildUniqueKey(namespace)
+	if err != nil {
+		return Job{}, BulkEnqueueResult{}, err
+	}
+
+	id := makeIdentifier()
+	job := Job{
+		Name:       p.Name,
+		ID:         id,
+		EnqueuedAt: epochSeconds,
+		Args:       p.Args,
+		Unique:     p.Unique,
+		UniqueKey:  uniqueKey,
+	}
+	job.rawJSON, err = job.serialize()
+
+	return job, BulkEnqueueResult{
+		ID:         id,
+		EnqueuedAt: epochSeconds,
+		UniqueKey:  uniqueKey,
+	}, err
+}
+
+func (p BulkEnqueueParam) buildUniqueKey(namespace string) (string, error) {
+	if !p.Unique {
+		return "", nil
+	}
+	args := p.Args
+	if p.UniqueKeyMap != nil {
+		args = p.UniqueKeyMap
+	}
+
+	return redisKeyUniqueJob(namespace, p.Name, args)
 }
