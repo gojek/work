@@ -31,7 +31,7 @@ func main() {
 	numJobs := 10
 	jobNames := []string{}
 
-	for i := 0; i < numJobs; i++ {
+	for i := range numJobs {
 		jobNames = append(jobNames, fmt.Sprintf("job%d", i))
 	}
 
@@ -87,7 +87,7 @@ DALOOP:
 func enqueueJobs(jobs []string, count int) {
 	enq := work.NewEnqueuer(namespace, pool)
 	for _, jobName := range jobs {
-		for i := 0; i < count; i++ {
+		for i := range count {
 			enq.Enqueue(jobName, work.Q{"i": i})
 		}
 	}

@@ -488,7 +488,9 @@ func (e *Enqueuer) redisDoHelper(c redis.Conn, cmdName string, args ...any) (rep
 		return
 	}
 
-	c.Flush()
+	if err = c.Flush(); err != nil {
+		return
+	}
 
 	reply, err = c.Receive()
 	if err != nil {

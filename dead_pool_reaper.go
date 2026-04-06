@@ -87,7 +87,9 @@ func (r *deadPoolReaper) reap() error {
 		lockJobTypes := jobTypes
 		// if we found jobs from the heartbeat, requeue them and remove the heartbeat
 		if len(jobTypes) > 0 {
-			r.requeueInProgressJobs(deadPoolID, jobTypes)
+			if err := r.requeueInProgressJobs(deadPoolID, jobTypes); err != nil {
+				return err
+			}
 			if _, err = conn.Do("DEL", redisKeyHeartbeat(r.namespace, deadPoolID)); err != nil {
 				return err
 			}
