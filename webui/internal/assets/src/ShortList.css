@@ -9,13 +9,13 @@
 }
 
 .li:after {
-  content: ", ";
+  content: ', ';
 }
 
 .li:last-child:before {
-  content: "and "
+  content: 'and ';
 }
 
 .li:last-child:after {
-  content: "";
+  content: '';
 }

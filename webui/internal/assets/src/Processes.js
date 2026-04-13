@@ -1,158 +1,144 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import UnixTime from './UnixTime';
 import ShortList from './ShortList';
-import styles from './bootstrap.min.css';
 import Args from './Args';
-import cx from './cx';
 
-class BusyWorkers extends React.Component {
-  static propTypes = {
-    worker: PropTypes.arrayOf(PropTypes.object).isRequired,
-  }
-
-  parseJson(input) {
-    if (input.length === 0) {
-      return null;
-    }
-
+function BusyWorkers({ worker }) {
+  function parseJson(input) {
+    if (input.length === 0) return null;
     try {
       return JSON.parse(input);
     } catch (e) {
-      return {parse_error: 'not a valid JSON', value: input};
+      return { parse_error: 'not a valid JSON', value: input };
     }
   }
 
-  render() {
-    return (
-      <div className={styles.tableResponsive}>
-        <table className={styles.table}>
-          <tbody>
-            <tr>
-              <th>Name</th>
-              <th>Arguments</th>
-              <th>Started At</th>
-              <th>Check-in At</th>
-              <th>Check-in</th>
+  return (
+    <div className="table-responsive">
+      <table className="table">
+        <tbody>
+          <tr>
+            <th>Name</th>
+            <th>Arguments</th>
+            <th>Started At</th>
+            <th>Check-in At</th>
+            <th>Check-in</th>
+          </tr>
+          {worker.map((w) => (
+            <tr key={w.worker_id}>
+              <td>{w.job_name}</td>
+              <td>
+                <Args args={parseJson(w.args_json)} />
+              </td>
+              <td>
+                <UnixTime ts={w.started_at} />
+              </td>
+              <td>
+                <UnixTime ts={w.checkin_at} />
+              </td>
+              <td>{w.checkin}</td>
             </tr>
-            {
-              this.props.worker.map((worker) => {
-                return (
-                  <tr key={worker.worker_id}>
-                    <td>{worker.job_name}</td>
-                    <td><Args args={this.parseJson(worker.args_json)}/></td>
-                    <td><UnixTime ts={worker.started_at}/></td>
-                    <td><UnixTime ts={worker.checkin_at}/></td>
-                    <td>{worker.checkin}</td>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+BusyWorkers.propTypes = {
+  worker: PropTypes.arrayOf(
+    PropTypes.shape({
+      worker_id: PropTypes.string,
+      job_name: PropTypes.string,
+      started_at: PropTypes.number,
+      checkin_at: PropTypes.number,
+      checkin: PropTypes.string,
+      args_json: PropTypes.string,
+    })
+  ).isRequired,
+};
+
+export default function Processes({ busyWorkerURL, workerPoolURL }) {
+  const [busyWorker, setBusyWorker] = useState([]);
+  const [workerPool, setWorkerPool] = useState([]);
+
+  useEffect(() => {
+    if (!busyWorkerURL) return;
+    fetch(busyWorkerURL)
+      .then((resp) => resp.json())
+      .then((data) => {
+        if (data) setBusyWorker(data);
+      });
+  }, [busyWorkerURL]);
+
+  useEffect(() => {
+    if (!workerPoolURL) return;
+    fetch(workerPoolURL)
+      .then((resp) => resp.json())
+      .then((data) => {
+        setWorkerPool(data.filter((w) => w.host !== ''));
+      });
+  }, [workerPoolURL]);
+
+  const workerCount = workerPool.reduce((sum, pool) => sum + pool.worker_ids.length, 0);
+
+  function getBusyPoolWorker(pool) {
+    return busyWorker.filter((w) => pool.worker_ids.includes(w.worker_id));
+  }
+
+  return (
+    <section>
+      <header>Processes</header>
+      <p>
+        {workerPool.length} Worker process(es). {busyWorker.length} active worker(s) out of{' '}
+        {workerCount}.
+      </p>
+      {workerPool.map((pool) => {
+        const busy = getBusyPoolWorker(pool);
+        return (
+          <div key={pool.worker_pool_id} className="panel panel-default">
+            <div className="table-responsive">
+              <table className="table">
+                <tbody>
+                  <tr>
+                    <td>
+                      {pool.host}: {pool.pid}
+                    </td>
+                    <td>
+                      Started <UnixTime ts={pool.started_at} />
+                    </td>
+                    <td>
+                      Last Heartbeat <UnixTime ts={pool.heartbeat_at} />
+                    </td>
+                    <td>Concurrency {pool.concurrency}</td>
                   </tr>
-                );
-              })
-            }
-          </tbody>
-        </table>
-      </div>
-    );
-  }
+                  <tr>
+                    <td colSpan="4">
+                      Servicing <ShortList item={pool.job_names} />.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td colSpan="4">
+                      {busy.length} active worker(s) and {pool.worker_ids.length - busy.length}{' '}
+                      idle.
+                    </td>
+                  </tr>
+                  <tr>
+                    <td colSpan="4">
+                      <div className="panel panel-default">
+                        <BusyWorkers worker={busy} />
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
+    </section>
+  );
 }
 
-export default class Processes extends React.Component {
-  static propTypes = {
-    busyWorkerURL: PropTypes.string,
-    workerPoolURL: PropTypes.string,
-  }
-
-  state = {
-    busyWorker: [],
-    workerPool: []
-  }
-
-  componentDidMount() {
-    if (this.props.busyWorkerURL) {
-      fetch(this.props.busyWorkerURL).
-        then((resp) => resp.json()).
-        then((data) => {
-          if (data) {
-            this.setState({
-              busyWorker: data
-            });
-          }
-        });
-    }
-    if (this.props.workerPoolURL) {
-      fetch(this.props.workerPoolURL).
-        then((resp) => resp.json()).
-        then((data) => {
-          let workers = [];
-          data.map((worker) => {
-            if (worker.host != '') {
-              workers.push(worker);
-            }
-          });
-          this.setState({
-            workerPool: workers
-          });
-        });
-    }
-  }
-
-  get workerCount() {
-    let count = 0;
-    this.state.workerPool.map((pool) => {
-      count += pool.worker_ids.length;
-    });
-    return count;
-  }
-
-  getBusyPoolWorker(pool) {
-    let workers = [];
-    this.state.busyWorker.map((worker) => {
-      if (pool.worker_ids.includes(worker.worker_id)) {
-        workers.push(worker);
-      }
-    });
-    return workers;
-  }
-
-  render() {
-    return (
-      <section>
-        <header>Processes</header>
-        <p>{this.state.workerPool.length} Worker process(es). {this.state.busyWorker.length} active worker(s) out of {this.workerCount}.</p>
-        {
-          this.state.workerPool.map((pool) => {
-            let busyWorker = this.getBusyPoolWorker(pool);
-            return (
-              <div key={pool.worker_pool_id} className={cx(styles.panel, styles.panelDefault)}>
-                <div className={styles.tableResponsive}>
-                  <table className={styles.table}>
-                    <tbody>
-                      <tr>
-                        <td>{pool.host}: {pool.pid}</td>
-                        <td>Started <UnixTime ts={pool.started_at}/></td>
-                        <td>Last Heartbeat <UnixTime ts={pool.heartbeat_at}/></td>
-                        <td>Concurrency {pool.concurrency}</td>
-                      </tr>
-                      <tr>
-                        <td colSpan="4">Servicing <ShortList item={pool.job_names} />.</td>
-                      </tr>
-                      <tr>
-                        <td colSpan="4">{busyWorker.length} active worker(s) and {pool.worker_ids.length - busyWorker.length} idle.</td>
-                      </tr>
-                      <tr>
-                        <td colSpan="4">
-                          <div className={cx(styles.panel, styles.panelDefault)}>
-                            <BusyWorkers worker={busyWorker} />
-                          </div>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            );
-          })
-        }
-      </section>
-    );
-  }
-}
+Processes.propTypes = { busyWorkerURL: PropTypes.string, workerPoolURL: PropTypes.string };

@@ -1,38 +1,38 @@
 {
-    "env": {
-        "mocha": true,
-        "browser": true,
-        "es6": true
+  "env": {
+    "jest": true,
+    "browser": true,
+    "node": true,
+    "es6": true
+  },
+  "extends": [
+    "eslint:recommended",
+    "plugin:react/recommended",
+    "plugin:react-hooks/recommended",
+    "plugin:prettier/recommended"
+  ],
+  "parser": "@babel/eslint-parser",
+  "parserOptions": {
+    "requireConfigFile": false,
+    "ecmaVersion": 2020,
+    "ecmaFeatures": {
+      "jsx": true
     },
-    "extends": ["eslint:recommended", "plugin:react/recommended"],
-    "parser": "babel-eslint",
-    "parserOptions": {
-        "ecmaVersion": 7,
-        "ecmaFeatures": {
-            "experimentalObjectRestSpread": true,
-            "jsx": true
-        },
-        "sourceType": "module"
-    },
-    "plugins": [
-        "react"
-    ],
-    "rules": {
-        "indent": [
-            "error",
-            2
-        ],
-        "linebreak-style": [
-            "error",
-            "unix"
-        ],
-        "quotes": [
-            "error",
-            "single"
-        ],
-        "semi": [
-            "error",
-            "always"
-        ]
+    "sourceType": "module"
+  },
+  "plugins": ["react", "react-hooks"],
+  "settings": {
+    "react": {
+      "version": "detect"
     }
+  },
+  "rules": {},
+  "overrides": [
+    {
+      "files": ["**/*.test.js"],
+      "rules": {
+        "react/prop-types": "off"
+      }
+    }
+  ]
 }
