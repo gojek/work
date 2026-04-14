@@ -1,21 +1,14 @@
-import './TestSetup';
-import expect from 'expect';
-import ShortList from './ShortList';
 import React from 'react';
-import { mount } from 'enzyme';
+import { render, screen } from '@testing-library/react';
+import ShortList from './ShortList';
 
 describe('ShortList', () => {
-  it('lists items', () => {
-    let shortList = mount(<ShortList item={['1', '2', '3', '4']} />);
-    let ul = shortList.find('ul');
+  it('lists first 3 items and shows "more" for the rest', () => {
+    render(<ShortList item={['1', '2', '3', '4']} />);
 
-    ul.props().children.map((el, i) => {
-      expect(el.type).toEqual('li');
-      if (i < 3) {
-        expect(el.props.children).toEqual(String(i+1));
-      } else {
-        expect(el.props.children).toEqual([i-2, ' more']);
-      }
-    });
+    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByText('1 more')).toBeInTheDocument();
   });
 });

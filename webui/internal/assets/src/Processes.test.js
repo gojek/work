@@ -1,52 +1,53 @@
-import './TestSetup';
-import expect from 'expect';
-import Processes from './Processes';
 import React from 'react';
-import { mount } from 'enzyme';
+import { render, screen } from '@testing-library/react';
+import Processes from './Processes';
+
+const busyWorkerData = [
+  {
+    worker_id: '2',
+    job_name: 'job1',
+    started_at: 1467753603,
+    checkin_at: 1467753603,
+    checkin: '123',
+    args_json: '{}',
+  },
+];
+
+const workerPoolData = [
+  {
+    worker_pool_id: '1',
+    started_at: 1467753603,
+    heartbeat_at: 1467753603,
+    job_names: ['job1', 'job2', 'job3', 'job4'],
+    concurrency: 10,
+    host: 'web51',
+    pid: 123,
+    worker_ids: ['1', '2', '3'],
+  },
+];
 
 describe('Processes', () => {
-  it('shows workers', () => {
-    let processes = mount(<Processes />);
+  beforeEach(() => {
+    global.fetch = jest.fn();
+  });
 
-    expect(processes.state().busyWorker.length).toEqual(0);
-    expect(processes.state().workerPool.length).toEqual(0);
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
 
-    processes.setState({
-      busyWorker: [
-        {
-          worker_id: '2',
-          job_name: 'job1',
-          started_at: 1467753603,
-          checkin_at: 1467753603,
-          checkin: '123',
-          args_json: '{}'
-        }
-      ],
-      workerPool: [
-        {
-          worker_pool_id: '1',
-          started_at: 1467753603,
-          heartbeat_at: 1467753603,
-          job_names: ['job1', 'job2', 'job3', 'job4'],
-          concurrency: 10,
-          host: 'web51',
-          pid: 123,
-          worker_ids: [
-            '1', '2', '3'
-          ]
-        }
-      ]
-    });
+  it('shows workers', async () => {
+    global.fetch
+      .mockResolvedValueOnce({ json: () => Promise.resolve(busyWorkerData) })
+      .mockResolvedValueOnce({ json: () => Promise.resolve(workerPoolData) });
 
-    expect(processes.state().busyWorker.length).toEqual(1);
-    expect(processes.state().workerPool.length).toEqual(1);
-    expect(processes.instance().workerCount).toEqual(3);
+    render(<Processes busyWorkerURL="./busy_workers" workerPoolURL="./worker_pools" />);
 
-    const expectedBusyWorker = [ { args_json: '{}', checkin: '123', checkin_at: 1467753603, job_name: 'job1', started_at: 1467753603, worker_id: '2' } ];
+    expect(
+      await screen.findByText('1 Worker process(es). 1 active worker(s) out of 3.')
+    ).toBeInTheDocument();
 
-    let busyWorkers = processes.find('BusyWorkers');
-    expect(busyWorkers.length).toEqual(1);
-    expect(busyWorkers.at(0).props().worker).toEqual(expectedBusyWorker);
-    expect(processes.instance().getBusyPoolWorker(processes.state().workerPool[0])).toEqual(expectedBusyWorker);
+    expect(screen.getByText('web51: 123')).toBeInTheDocument();
+    expect(screen.getByText('1 active worker(s) and 2 idle.')).toBeInTheDocument();
+    expect(screen.getAllByText('job1').length).toBeGreaterThan(0);
   });
 });

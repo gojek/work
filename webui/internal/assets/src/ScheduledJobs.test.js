@@ -1,54 +1,58 @@
-import './TestSetup';
-import expect from 'expect';
-import ScheduledJobs from './ScheduledJobs';
 import React from 'react';
-import { mount } from 'enzyme';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import ScheduledJobs from './ScheduledJobs';
+
+function genJobs(n) {
+  return Array.from({ length: n }, (_, i) => ({
+    id: i + 1,
+    name: 'test',
+    args: {},
+    run_at: 1467760821,
+    err: 'err',
+  }));
+}
 
 describe('ScheduledJobs', () => {
-  it('shows jobs', () => {
-    let scheduledJobs = mount(<ScheduledJobs />);
-
-    expect(scheduledJobs.state().jobs.length).toEqual(0);
-
-    scheduledJobs.setState({
-      count: 2,
-      jobs: [
-        {id: 1, name: 'test', args: {}, run_at: 1467760821, err: 'err1'},
-        {id: 2, name: 'test2', args: {}, run_at: 1467760822, err: 'err2'}
-      ]
-    });
-
-    expect(scheduledJobs.state().jobs.length).toEqual(2);
+  beforeEach(() => {
+    global.fetch = jest.fn();
   });
 
-  it('has pages', () => {
-    let scheduledJobs = mount(<ScheduledJobs />);
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
 
-    let genJob = (n) => {
-      let job = [];
-      for (let i = 1; i <= n; i++) {
-        job.push({
-          id: i,
-          name: 'test',
-          args: {},
-          run_at: 1467760821,
-          err: 'err',
-        });
-      }
-      return job;
-    };
-    scheduledJobs.setState({
-      count: 21,
-      jobs: genJob(21)
+  it('shows jobs', async () => {
+    global.fetch.mockResolvedValueOnce({
+      json: () =>
+        Promise.resolve({
+          count: 2,
+          jobs: [
+            { id: 1, name: 'test', args: {}, run_at: 1467760821 },
+            { id: 2, name: 'test2', args: {}, run_at: 1467760822 },
+          ],
+        }),
     });
 
-    expect(scheduledJobs.state().jobs.length).toEqual(21);
-    expect(scheduledJobs.state().page).toEqual(1);
+    render(<ScheduledJobs url="./scheduled_jobs" />);
 
-    let pageList = scheduledJobs.find('PageList');
-    expect(pageList.length).toEqual(1);
+    expect(await screen.findByText('2 job(s) scheduled.')).toBeInTheDocument();
+    expect(screen.getByText('test')).toBeInTheDocument();
+    expect(screen.getByText('test2')).toBeInTheDocument();
+  });
 
-    pageList.at(0).props().jumpTo(2)();
-    expect(scheduledJobs.state().page).toEqual(2);
+  it('navigates to next page when page link is clicked', async () => {
+    global.fetch.mockResolvedValue({
+      json: () => Promise.resolve({ count: 21, jobs: genJobs(21) }),
+    });
+
+    const user = userEvent.setup();
+    render(<ScheduledJobs url="./scheduled_jobs" />);
+
+    await screen.findByText('21 job(s) scheduled.');
+
+    await user.click(screen.getByText('2'));
+
+    expect(global.fetch).toHaveBeenLastCalledWith('./scheduled_jobs?page=2');
   });
 });

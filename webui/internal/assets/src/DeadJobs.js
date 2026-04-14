@@ -1,168 +1,136 @@
-import React from 'react';
+import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 import PageList from './PageList';
 import UnixTime from './UnixTime';
-import styles from './bootstrap.min.css';
-import cx from './cx';
 import Args from './Args';
+import usePaginatedFetch from './usePaginatedFetch';
 
-export default class DeadJobs extends React.Component {
-  static propTypes = {
-    fetchURL: PropTypes.string,
-    deleteURL: PropTypes.string,
-    deleteAllURL: PropTypes.string,
-    retryURL: PropTypes.string,
-    retryAllURL: PropTypes.string,
+export default function DeadJobs({ fetchURL, deleteURL, deleteAllURL, retryURL, retryAllURL }) {
+  const { page, setPage, count, jobs, refresh } = usePaginatedFetch(fetchURL);
+  const [selected, setSelected] = useState([]);
+
+  function checked(job) {
+    return selected.includes(job);
   }
 
-  state = {
-    selected: [],
-    page: 1,
-    count: 0,
-    jobs: []
-  }
-
-  fetch() {
-    if (!this.props.fetchURL) {
-      return;
-    }
-    fetch(`${this.props.fetchURL}?page=${this.state.page}`).
-      then((resp) => resp.json()).
-      then((data) => {
-        this.setState({
-          selected: [],
-          count: data.count,
-          jobs: data.jobs
-        });
-      });
-  }
-
-  componentDidMount() {
-    this.fetch();
-  }
-
-  updatePage(page) {
-    this.setState({page: page}, this.fetch);
-  }
-
-  checked(job) {
-    return this.state.selected.includes(job);
-  }
-
-  check(job) {
-    var index = this.state.selected.indexOf(job);
+  function check(job) {
+    const index = selected.indexOf(job);
     if (index >= 0) {
-      this.state.selected.splice(index, 1);
+      setSelected(selected.filter((_, i) => i !== index));
     } else {
-      this.state.selected.push(job);
+      setSelected([...selected, job]);
     }
-    this.setState({
-      selected: this.state.selected
-    });
   }
 
-  checkAll() {
-    if (this.state.selected.length > 0) {
-      this.setState({selected: []});
+  function checkAll() {
+    if (selected.length > 0) {
+      setSelected([]);
     } else {
-      this.state.jobs.map((job) => {
-        this.state.selected.push(job);
-      });
-      this.setState({
-        selected: this.state.selected
-      });
+      setSelected([...jobs]);
     }
   }
 
-  deleteAll() {
-    if (!this.props.deleteAllURL) {
-      return;
-    }
-    fetch(this.props.deleteAllURL, {method: 'post'}).then(() => {
-      this.updatePage(1);
+  function deleteAll() {
+    if (!deleteAllURL) return;
+    fetch(deleteAllURL, { method: 'post' }).then(() => {
+      setSelected([]);
+      setPage(1);
+      refresh();
     });
   }
 
-  deleteSelected() {
-    let p = [];
-    this.state.selected.map((job) => {
-      if (!this.props.deleteURL) {
-        return;
-      }
-      p.push(fetch(`${this.props.deleteURL}/${job.died_at}/${job.id}`, {method: 'post'}));
+  function deleteSelected() {
+    const promises = selected.map((job) => {
+      if (!deleteURL) return Promise.resolve();
+      return fetch(`${deleteURL}/${job.died_at}/${job.id}`, { method: 'post' });
     });
-
-    Promise.all(p).then(() => {
-      this.fetch();
+    Promise.all(promises).then(() => {
+      setSelected([]);
+      refresh();
     });
   }
 
-  retryAll() {
-    if (!this.props.retryAllURL) {
-      return;
-    }
-    fetch(this.props.retryAllURL, {method: 'post'}).then(() => {
-      this.updatePage(1);
+  function retryAll() {
+    if (!retryAllURL) return;
+    fetch(retryAllURL, { method: 'post' }).then(() => {
+      setSelected([]);
+      setPage(1);
+      refresh();
     });
   }
 
-  retrySelected() {
-    let p = [];
-    this.state.selected.map((job) => {
-      if (!this.props.retryURL) {
-        return;
-      }
-      p.push(fetch(`${this.props.retryURL}/${job.died_at}/${job.id}`, {method: 'post'}));
+  function retrySelected() {
+    const promises = selected.map((job) => {
+      if (!retryURL) return Promise.resolve();
+      return fetch(`${retryURL}/${job.died_at}/${job.id}`, { method: 'post' });
     });
-
-    Promise.all(p).then(() => {
-      this.fetch();
+    Promise.all(promises).then(() => {
+      setSelected([]);
+      refresh();
     });
   }
 
-  render() {
-    return (
-      <div>
-        <div className={cx(styles.panel, styles.panelDefault)}>
-          <div className={styles.panelHeading}>Dead Jobs</div>
-          <div className={styles.panelBody}>
-            <p>{this.state.count} job(s) are dead.</p>
-            <PageList page={this.state.page} totalCount={this.state.count} perPage={20} jumpTo={(page) => () => this.updatePage(page)}/>
-          </div>
-          <div className={styles.tableResponsive}>
-            <table className={styles.table}>
-              <tbody>
-                <tr>
-                  <th><input type="checkbox" checked={this.state.selected.length > 0} onChange={() => this.checkAll()}/></th>
-                  <th>Name</th>
-                  <th>Arguments</th>
-                  <th>Error</th>
-                  <th>Died At</th>
-                </tr>
-                {
-                  this.state.jobs.map((job) => {
-                    return (
-                      <tr key={job.id}>
-                        <td><input type="checkbox" checked={this.checked(job)} onChange={() => this.check(job)}/></td>
-                        <td>{job.name}</td>
-                        <td><Args args={job.args}/></td>
-                        <td>{job.err}</td>
-                        <td><UnixTime ts={job.t} /></td>
-                      </tr>
-                    );
-                  })
-                }
-              </tbody>
-            </table>
-          </div>
+  return (
+    <div>
+      <div className="panel panel-default">
+        <div className="panel-heading">Dead Jobs</div>
+        <div className="panel-body">
+          <p>{count} job(s) are dead.</p>
+          <PageList page={page} totalCount={count} perPage={20} jumpTo={(p) => () => setPage(p)} />
         </div>
-        <div className={styles.btnGroup} role="group">
-          <button type="button" className={cx(styles.btn, styles.btnDefault)} onClick={() => this.deleteSelected()}>Delete Selected Jobs</button>
-          <button type="button" className={cx(styles.btn, styles.btnDefault)} onClick={() => this.retrySelected()}>Retry Selected Jobs</button>
-          <button type="button" className={cx(styles.btn, styles.btnDefault)} onClick={() => this.deleteAll()}>Delete All Jobs</button>
-          <button type="button" className={cx(styles.btn, styles.btnDefault)} onClick={() => this.retryAll()}>Retry All Jobs</button>
+        <div className="table-responsive">
+          <table className="table">
+            <tbody>
+              <tr>
+                <th>
+                  <input type="checkbox" checked={selected.length > 0} onChange={checkAll} />
+                </th>
+                <th>Name</th>
+                <th>Arguments</th>
+                <th>Error</th>
+                <th>Died At</th>
+              </tr>
+              {jobs.map((job) => (
+                <tr key={job.id}>
+                  <td>
+                    <input type="checkbox" checked={checked(job)} onChange={() => check(job)} />
+                  </td>
+                  <td>{job.name}</td>
+                  <td>
+                    <Args args={job.args} />
+                  </td>
+                  <td>{job.err}</td>
+                  <td>
+                    <UnixTime ts={job.t} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
-    );
-  }
+      <div className="btn-group" role="group">
+        <button type="button" className="btn btn-default" onClick={deleteSelected}>
+          Delete Selected Jobs
+        </button>
+        <button type="button" className="btn btn-default" onClick={retrySelected}>
+          Retry Selected Jobs
+        </button>
+        <button type="button" className="btn btn-default" onClick={deleteAll}>
+          Delete All Jobs
+        </button>
+        <button type="button" className="btn btn-default" onClick={retryAll}>
+          Retry All Jobs
+        </button>
+      </div>
+    </div>
+  );
 }
+
+DeadJobs.propTypes = {
+  fetchURL: PropTypes.string,
+  deleteURL: PropTypes.string,
+  deleteAllURL: PropTypes.string,
+  retryURL: PropTypes.string,
+  retryAllURL: PropTypes.string,
+};
