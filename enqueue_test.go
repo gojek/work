@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gomodule/redigo/redis"
 	"github.com/rafaeljusto/redigomock/v3"
 	"github.com/stretchr/testify/assert"
 )
@@ -1075,9 +1076,11 @@ func TestEnqueueUniqueByKey(t *testing.T) {
 
 	// Process the queues. Ensure the right number of jobs were processed
 	var wats, taws int64
+	var inProgQueues []string
 	wp := NewWorkerPool(TestContext{}, 3, ns, pool)
 	wp.JobWithOptions("wat", JobOptions{Priority: 1, MaxFails: 1}, func(job *Job) error {
 		mutex.Lock()
+		inProgQueues = append(inProgQueues, string(job.inProgQueue))
 		argA := job.Args["a"].(float64)
 		argB := job.Args["b"].(string)
 		if argA == 3 {
@@ -1093,12 +1096,23 @@ func TestEnqueueUniqueByKey(t *testing.T) {
 	})
 	wp.JobWithOptions("taw", JobOptions{Priority: 1, MaxFails: 1}, func(job *Job) error {
 		mutex.Lock()
+		inProgQueues = append(inProgQueues, string(job.inProgQueue))
 		taws++
 		mutex.Unlock()
 		return fmt.Errorf("ohno")
 	})
 	wp.Start()
 	wp.Drain()
+
+	for _, queue := range inProgQueues {
+		conn := pool.Get()
+		defer conn.Close()
+
+		llen, err := redis.Int64(conn.Do(`LLEN`, queue))
+		assert.NoError(t, err)
+		assert.Equal(t, int64(0), llen, "llen %s expected 0 jobs, got %d", queue, llen)
+	}
+
 	wp.Stop()
 
 	assert.EqualValues(t, 2, wats)
