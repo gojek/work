@@ -190,6 +190,7 @@ func (w *worker) fetchJob() (*Job, error) {
 }
 
 func (w *worker) processJob(job *Job) {
+	dequeuedRawJSON := job.rawJSON
 	if job.Unique {
 		updatedJob := w.getAndDeleteUniqueJob(job)
 		// This is to support the old way of doing it, where we used the job off the queue and just deleted the unique key
@@ -216,7 +217,7 @@ func (w *worker) processJob(job *Job) {
 		job.failed(runErr)
 		fate = w.jobFate(jt, job)
 	}
-	w.removeJobFromInProgress(job, fate)
+	w.removeJobFromInProgress(job, fate, dequeuedRawJSON)
 }
 
 func (w *worker) getAndDeleteUniqueJob(job *Job) *Job {
@@ -264,12 +265,12 @@ func (w *worker) getAndDeleteUniqueJob(job *Job) *Job {
 	return jobWithArgs
 }
 
-func (w *worker) removeJobFromInProgress(job *Job, fate terminateOp) {
+func (w *worker) removeJobFromInProgress(job *Job, fate terminateOp, dequeuedRawJSON []byte) {
 	conn := w.pool.Get()
 	defer conn.Close()
 
 	conn.Send("MULTI")
-	conn.Send("LREM", job.inProgQueue, 1, job.rawJSON)
+	conn.Send("LREM", job.inProgQueue, 1, dequeuedRawJSON)
 	conn.Send("DECR", redisKeyJobsLock(w.namespace, job.Name))
 	conn.Send("HINCRBY", redisKeyJobsLockInfo(w.namespace, job.Name), w.poolID, -1)
 	fate(conn)
