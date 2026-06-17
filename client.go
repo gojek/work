@@ -17,6 +17,10 @@ var ErrNotDeleted = fmt.Errorf("nothing deleted")
 // no object was actually retried by those commmands.
 var ErrNotRetried = fmt.Errorf("nothing retried")
 
+// ErrUnknownJob is returned by the queue-management functions when the job name is not present
+// in the known jobs set (i.e. no worker pool has ever advertised handling that job).
+var ErrUnknownJob = fmt.Errorf("unknown job name")
+
 // Client implements all of the functionality of the web UI. It can be used to inspect the status of a running cluster and retry dead jobs.
 type Client struct {
 	namespace string
@@ -209,6 +213,7 @@ type Queue struct {
 	Latency        int64  `json:"latency"`
 	MaxConcurrency int64  `json:"max_concurrency"`
 	LockCount      int64  `json:"lock_count"`
+	Paused         bool   `json:"paused"`
 }
 
 // Queues returns the Queue's it finds.
@@ -227,6 +232,7 @@ func (c *Client) Queues() ([]*Queue, error) {
 		conn.Send("LLEN", redisKeyJobs(c.namespace, jobName))
 		conn.Send("GET", redisKeyJobsConcurrency(c.namespace, jobName))
 		conn.Send("GET", redisKeyJobsLock(c.namespace, jobName))
+		conn.Send("EXISTS", redisKeyJobsPaused(c.namespace, jobName))
 	}
 
 	if err := conn.Flush(); err != nil {
@@ -255,11 +261,18 @@ func (c *Client) Queues() ([]*Queue, error) {
 			return nil, err
 		}
 
+		pausedCount, err := redis.Int64(conn.Receive())
+		if err != nil && err != redis.ErrNil {
+			logError("client.queues.receive.paused", err)
+			return nil, err
+		}
+
 		queues = append(queues, &Queue{
 			JobName:        jobName,
 			Count:          count,
 			LockCount:      lockCount,
 			MaxConcurrency: maxConcurrency,
+			Paused:         pausedCount > 0,
 		})
 	}
 
@@ -482,6 +495,139 @@ func (c *Client) DeleteAllDeadJobs() error {
 	}
 
 	return nil
+}
+
+// jobNameKnown reports whether jobName is in the known jobs set.
+func (c *Client) jobNameKnown(jobName string) (bool, error) {
+	conn := c.pool.Get()
+	defer conn.Close()
+
+	ok, err := redis.Bool(conn.Do("SISMEMBER", redisKeyKnownJobs(c.namespace), jobName))
+	if err != nil {
+		logError("client.job_name_known", err)
+		return false, err
+	}
+	return ok, nil
+}
+
+// SetMaxConcurrency sets the per-job-type max concurrency and returns the previous value.
+// Returns ErrUnknownJob if the job name is not known. This value is ephemeral: a worker pool
+// resets it to its compile-time JobOptions.MaxConcurrency on restart.
+func (c *Client) SetMaxConcurrency(jobName string, n uint) (int64, error) {
+	if known, err := c.jobNameKnown(jobName); err != nil {
+		return 0, err
+	} else if !known {
+		return 0, ErrUnknownJob
+	}
+
+	conn := c.pool.Get()
+	defer conn.Close()
+
+	prev, err := redis.Int64(conn.Do("GETSET", redisKeyJobsConcurrency(c.namespace, jobName), n))
+	if err != nil && err != redis.ErrNil {
+		logError("client.set_max_concurrency", err)
+		return 0, err
+	}
+	return prev, nil
+}
+
+// PauseJob pauses the named queue so the fetcher skips it. Returns whether it was already
+// paused. The paused state persists across worker-pool restarts until ResumeJob is called.
+func (c *Client) PauseJob(jobName string) (bool, error) {
+	if known, err := c.jobNameKnown(jobName); err != nil {
+		return false, err
+	} else if !known {
+		return false, ErrUnknownJob
+	}
+
+	conn := c.pool.Get()
+	defer conn.Close()
+
+	prev, err := redis.Int64(conn.Do("EXISTS", redisKeyJobsPaused(c.namespace, jobName)))
+	if err != nil {
+		logError("client.pause_job.exists", err)
+		return false, err
+	}
+	if _, err := conn.Do("SET", redisKeyJobsPaused(c.namespace, jobName), ""); err != nil {
+		logError("client.pause_job.set", err)
+		return false, err
+	}
+	return prev > 0, nil
+}
+
+// ResumeJob resumes a paused queue. Returns whether it was paused beforehand.
+func (c *Client) ResumeJob(jobName string) (bool, error) {
+	if known, err := c.jobNameKnown(jobName); err != nil {
+		return false, err
+	} else if !known {
+		return false, ErrUnknownJob
+	}
+
+	conn := c.pool.Get()
+	defer conn.Close()
+
+	deleted, err := redis.Int64(conn.Do("DEL", redisKeyJobsPaused(c.namespace, jobName)))
+	if err != nil {
+		logError("client.resume_job", err)
+		return false, err
+	}
+	return deleted > 0, nil
+}
+
+// ResetLockCount forces the lock counter to zero, returning the previous value.
+//
+// This is an emergency tool. The dead pool reaper normally reconciles locks for crashed
+// pools (see dead_pool_reaper.go); reset_lock should be used only when an incident requires
+// immediate intervention and the operator accepts that running jobs may momentarily exceed
+// max_concurrency until the reaper next runs.
+func (c *Client) ResetLockCount(jobName string) (int64, error) {
+	if known, err := c.jobNameKnown(jobName); err != nil {
+		return 0, err
+	} else if !known {
+		return 0, ErrUnknownJob
+	}
+
+	conn := c.pool.Get()
+	defer conn.Close()
+
+	prev, err := redis.Int64(conn.Do("GETSET", redisKeyJobsLock(c.namespace, jobName), 0))
+	if err != nil && err != redis.ErrNil {
+		logError("client.reset_lock_count", err)
+		return 0, err
+	}
+	return prev, nil
+}
+
+// PurgeQueue deletes all pending jobs from the named queue and returns how many were removed.
+// In-progress jobs (held in per-pool inprogress queues) are not touched.
+func (c *Client) PurgeQueue(jobName string) (int64, error) {
+	if known, err := c.jobNameKnown(jobName); err != nil {
+		return 0, err
+	} else if !known {
+		return 0, ErrUnknownJob
+	}
+
+	conn := c.pool.Get()
+	defer conn.Close()
+
+	key := redisKeyJobs(c.namespace, jobName)
+	conn.Send("LLEN", key)
+	conn.Send("DEL", key)
+	if err := conn.Flush(); err != nil {
+		logError("client.purge_queue.flush", err)
+		return 0, err
+	}
+
+	purged, err := redis.Int64(conn.Receive())
+	if err != nil {
+		logError("client.purge_queue.llen", err)
+		return 0, err
+	}
+	if _, err := conn.Receive(); err != nil {
+		logError("client.purge_queue.del", err)
+		return 0, err
+	}
+	return purged, nil
 }
 
 // DeleteScheduledJob deletes a job in the scheduled queue.

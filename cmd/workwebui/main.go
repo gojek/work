@@ -17,7 +17,16 @@ var (
 	redisDatabase  = flag.String("database", "0", "redis database")
 	redisNamespace = flag.String("ns", "work", "redis namespace")
 	webHostPort    = flag.String("listen", ":5040", "hostport to listen for HTTP JSON API")
+	authUser       = flag.String("auth-user", envOr("WORK_WEBUI_AUTH_USER", "admin"), "username for HTTP Basic Auth (or WORK_WEBUI_AUTH_USER env)")
+	authPassword   = flag.String("auth-password", os.Getenv("WORK_WEBUI_AUTH_PASSWORD"), "password for HTTP Basic Auth over the whole UI; empty disables auth (or WORK_WEBUI_AUTH_PASSWORD env)")
 )
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
 
 func main() {
 	flag.Parse()
@@ -27,6 +36,11 @@ func main() {
 	fmt.Println("database = ", *redisDatabase)
 	fmt.Println("namespace = ", *redisNamespace)
 	fmt.Println("listen = ", *webHostPort)
+	if *authPassword == "" {
+		fmt.Println("auth = disabled (set -auth-password or WORK_WEBUI_AUTH_PASSWORD to require Basic Auth)")
+	} else {
+		fmt.Printf("auth = enabled (user=%q)\n", *authUser)
+	}
 
 	database, err := strconv.Atoi(*redisDatabase)
 	if err != nil {
@@ -36,7 +50,12 @@ func main() {
 
 	pool := newPool(*redisHostPort, database)
 
-	server := webui.NewServer(*redisNamespace, pool, *webHostPort)
+	var opts []webui.HandlerOption
+	if *authPassword != "" {
+		opts = append(opts, webui.WithBasicAuth(*authUser, *authPassword))
+	}
+
+	server := webui.NewServer(*redisNamespace, pool, *webHostPort, opts...)
 	server.Start()
 
 	c := make(chan os.Signal, 1)
