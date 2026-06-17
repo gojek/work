@@ -55,7 +55,12 @@ root.render(
           path="processes"
           element={<Processes busyWorkerURL="./busy_workers" workerPoolURL="./worker_pools" />}
         />
-        <Route path="queues" element={<Queues url="./queues" />} />
+        <Route
+          path="queues"
+          element={
+            <Queues url="./queues" adminBaseURL="./queues" adminStatusURL="./admin_status" />
+          }
+        />
         <Route path="retry_jobs" element={<RetryJobs url="./retry_jobs" />} />
         <Route path="scheduled_jobs" element={<ScheduledJobs url="./scheduled_jobs" />} />
         <Route

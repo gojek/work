@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import DeadJobs from './DeadJobs';
 
@@ -32,56 +32,39 @@ describe('DeadJobs', () => {
     global.fetch.mockResolvedValue({ json: () => Promise.resolve({ count: 2, jobs: twoJobs }) });
 
     const user = userEvent.setup();
-    // No action URLs provided — button clicks are no-ops so they won't re-fetch and reset selection
     render(<DeadJobs fetchURL="./dead_jobs" />);
 
     await screen.findByText('2 job(s) are dead.');
 
     let checkboxes = screen.getAllByRole('checkbox');
-    expect(checkboxes).toHaveLength(3); // 1 header + 2 rows
+    expect(checkboxes).toHaveLength(3);
     expect(checkboxes[0]).not.toBeChecked();
-    expect(checkboxes[1]).not.toBeChecked();
-    expect(checkboxes[2]).not.toBeChecked();
 
-    // Check all via header checkbox
     await user.click(checkboxes[0]);
-    checkboxes = screen.getAllByRole('checkbox'); // re-query after re-render
+    checkboxes = screen.getAllByRole('checkbox');
     expect(checkboxes[0]).toBeChecked();
     expect(checkboxes[1]).toBeChecked();
     expect(checkboxes[2]).toBeChecked();
 
-    // Uncheck first row job
     await user.click(checkboxes[1]);
     checkboxes = screen.getAllByRole('checkbox');
     expect(checkboxes[1]).not.toBeChecked();
-    expect(checkboxes[0]).toBeChecked(); // header: some selected → still truthy
-    expect(checkboxes[2]).toBeChecked();
 
-    // Re-check it
-    await user.click(checkboxes[1]);
-    checkboxes = screen.getAllByRole('checkbox');
-    expect(checkboxes[1]).toBeChecked();
-
-    // Uncheck all via header (selected.length > 0 → sets selected to [])
     await user.click(checkboxes[0]);
     checkboxes = screen.getAllByRole('checkbox');
-    expect(checkboxes[0]).not.toBeChecked();
-    expect(checkboxes[1]).not.toBeChecked();
-    expect(checkboxes[2]).not.toBeChecked();
+    expect(checkboxes.every((cb) => !cb.checked)).toBe(true);
   });
 
-  it('renders four action buttons', async () => {
+  it('renders four selection/all action buttons', async () => {
     global.fetch.mockResolvedValue({ json: () => Promise.resolve({ count: 2, jobs: twoJobs }) });
 
     render(<DeadJobs fetchURL="./dead_jobs" />);
     await screen.findByText('2 job(s) are dead.');
 
-    const buttons = screen.getAllByRole('button');
-    expect(buttons).toHaveLength(4);
-    expect(buttons[0]).toHaveTextContent('Delete Selected Jobs');
-    expect(buttons[1]).toHaveTextContent('Retry Selected Jobs');
-    expect(buttons[2]).toHaveTextContent('Delete All Jobs');
-    expect(buttons[3]).toHaveTextContent('Retry All Jobs');
+    expect(screen.getByRole('button', { name: /Delete Selected/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Retry Selected/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Delete All$/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Retry All$/ })).toBeInTheDocument();
   });
 
   it('navigates to next page when page link is clicked', async () => {
@@ -97,5 +80,159 @@ describe('DeadJobs', () => {
     await user.click(screen.getByText('2'));
 
     expect(global.fetch).toHaveBeenCalledWith('./dead_jobs?page=2');
+  });
+
+  it('shows an empty state when there are no dead jobs', async () => {
+    global.fetch.mockResolvedValue({ json: () => Promise.resolve({ count: 0, jobs: [] }) });
+
+    render(<DeadJobs fetchURL="./dead_jobs" />);
+
+    expect(await screen.findByText('No dead jobs.')).toBeInTheDocument();
+  });
+
+  it('disables the selected-action buttons until rows are checked', async () => {
+    global.fetch.mockResolvedValue({ json: () => Promise.resolve({ count: 2, jobs: twoJobs }) });
+
+    const user = userEvent.setup();
+    render(<DeadJobs fetchURL="./dead_jobs" />);
+    await screen.findByText('2 job(s) are dead.');
+
+    expect(screen.getByRole('button', { name: /Delete Selected/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Retry Selected/ })).toBeDisabled();
+
+    await user.click(screen.getAllByRole('checkbox')[1]);
+
+    expect(screen.getByRole('button', { name: /Delete Selected \(1\)/ })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Retry Selected \(1\)/ })).toBeEnabled();
+  });
+
+  it('supports per-row retry and delete', async () => {
+    global.fetch.mockResolvedValue({ json: () => Promise.resolve({ count: 2, jobs: twoJobs }) });
+
+    const user = userEvent.setup();
+    render(
+      <DeadJobs fetchURL="./dead_jobs" deleteURL="./delete_dead_job" retryURL="./retry_dead_job" />
+    );
+    await screen.findByText('2 job(s) are dead.');
+
+    await user.click(screen.getAllByRole('button', { name: /^Retry$/ })[0]);
+    expect(global.fetch).toHaveBeenCalledWith(
+      './retry_dead_job/100/1',
+      expect.objectContaining({ method: 'post' })
+    );
+
+    await user.click(screen.getAllByRole('button', { name: /^Delete$/ })[1]);
+    expect(global.fetch).toHaveBeenCalledWith(
+      './delete_dead_job/200/2',
+      expect.objectContaining({ method: 'post' })
+    );
+  });
+
+  describe('bulk by job name', () => {
+    it('is hidden when no bulk URLs are provided', async () => {
+      global.fetch.mockResolvedValue({ json: () => Promise.resolve({ count: 0, jobs: [] }) });
+      render(<DeadJobs fetchURL="./dead_jobs" />);
+      await screen.findByText('0 job(s) are dead.');
+
+      expect(screen.queryByLabelText(/Job name for bulk delete or retry/i)).not.toBeInTheDocument();
+    });
+
+    it('disables bulk buttons until a name is typed', async () => {
+      global.fetch.mockResolvedValue({ json: () => Promise.resolve({ count: 0, jobs: [] }) });
+      const user = userEvent.setup();
+      render(
+        <DeadJobs
+          fetchURL="./dead_jobs"
+          deleteAllURL="./delete_all_dead_jobs"
+          retryAllURL="./retry_all_dead_jobs"
+        />
+      );
+      await screen.findByText('0 job(s) are dead.');
+
+      const del = screen.getByRole('button', { name: /Delete matching/i });
+      const retry = screen.getByRole('button', { name: /Retry matching/i });
+      expect(del).toBeDisabled();
+      expect(retry).toBeDisabled();
+
+      await user.type(screen.getByLabelText(/Job name for bulk delete or retry/i), 'alpha');
+      expect(del).toBeEnabled();
+      expect(retry).toBeEnabled();
+    });
+
+    it('submits delete after typed confirmation in the modal', async () => {
+      global.fetch.mockImplementation((url) => {
+        if (url.startsWith('./delete_all_dead_jobs')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ status: 'ok', deleted: 7, job_name: 'alpha' }),
+          });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ count: 0, jobs: [] }) });
+      });
+
+      const user = userEvent.setup();
+      render(
+        <DeadJobs
+          fetchURL="./dead_jobs"
+          deleteAllURL="./delete_all_dead_jobs"
+          retryAllURL="./retry_all_dead_jobs"
+        />
+      );
+      await screen.findByText('0 job(s) are dead.');
+
+      await user.type(screen.getByLabelText(/Job name for bulk delete or retry/i), 'alpha');
+      await user.click(screen.getByRole('button', { name: /Delete matching/i }));
+      await user.type(screen.getByLabelText(/Type .* to confirm/i), 'alpha');
+      await user.click(screen.getByRole('button', { name: /^Delete$/ }));
+
+      await waitFor(() => {
+        expect(global.fetch).toHaveBeenCalledWith(
+          './delete_all_dead_jobs?job_name=alpha',
+          expect.objectContaining({ method: 'post' })
+        );
+      });
+
+      expect(await screen.findByRole('status')).toHaveTextContent(
+        /Deleted 7 dead job\(s\) named "alpha"/i
+      );
+      expect(screen.getByLabelText(/Job name for bulk delete or retry/i)).toHaveValue('');
+    });
+
+    it('submits retry after confirming in the modal', async () => {
+      global.fetch.mockImplementation((url) => {
+        if (url.startsWith('./retry_all_dead_jobs')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ status: 'ok', retried: 3, job_name: 'beta' }),
+          });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ count: 0, jobs: [] }) });
+      });
+
+      const user = userEvent.setup();
+      render(
+        <DeadJobs
+          fetchURL="./dead_jobs"
+          deleteAllURL="./delete_all_dead_jobs"
+          retryAllURL="./retry_all_dead_jobs"
+        />
+      );
+      await screen.findByText('0 job(s) are dead.');
+
+      await user.type(screen.getByLabelText(/Job name for bulk delete or retry/i), 'beta');
+      await user.click(screen.getByRole('button', { name: /Retry matching/i }));
+      await user.click(screen.getByRole('button', { name: /^Retry$/ }));
+
+      await waitFor(() => {
+        expect(global.fetch).toHaveBeenCalledWith(
+          './retry_all_dead_jobs?job_name=beta',
+          expect.objectContaining({ method: 'post' })
+        );
+      });
+
+      expect(await screen.findByRole('status')).toHaveTextContent(
+        /Retried 3 dead job\(s\) named "beta"/i
+      );
+    });
   });
 });

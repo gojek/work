@@ -3,6 +3,7 @@ package webui
 import (
 	gocontext "context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -23,10 +24,14 @@ type context struct {
 }
 
 // NewServer creates and returns a new server. The 'namespace' param is the redis namespace to use. The hostPort param is the address to bind on to expose the API.
-func NewServer(namespace string, pool *redis.Pool, hostPort string) *Server {
+//
+// Pass HandlerOptions (e.g. WithAdminBasicAuth) to enable the admin (mutating) endpoints.
+// When no options are supplied the server is read-only — preserving the historical behavior
+// for existing callers.
+func NewServer(namespace string, pool *redis.Pool, hostPort string, opts ...HandlerOption) *Server {
 	client := work.NewClient(namespace, pool)
 	return &Server{
-		server: &http.Server{Addr: hostPort, Handler: NewHandler(client)},
+		server: &http.Server{Addr: hostPort, Handler: NewHandler(client, opts...)},
 	}
 }
 
@@ -168,14 +173,98 @@ func (c *context) retryDeadJob(rw http.ResponseWriter, r *http.Request) {
 	render(rw, map[string]string{"status": "ok"}, err)
 }
 
-func (c *context) deleteAllDeadJobs(rw http.ResponseWriter, _ *http.Request) {
+func (c *context) deleteAllDeadJobs(rw http.ResponseWriter, r *http.Request) {
+	if jobName := r.URL.Query().Get("job_name"); jobName != "" {
+		deleted, err := c.client.DeleteAllDeadJobsByJobName(jobName)
+		render(rw, map[string]any{"status": "ok", "deleted": deleted, "job_name": jobName}, err)
+		return
+	}
 	err := c.client.DeleteAllDeadJobs()
 	render(rw, map[string]string{"status": "ok"}, err)
 }
 
-func (c *context) retryAllDeadJobs(rw http.ResponseWriter, _ *http.Request) {
+func (c *context) retryAllDeadJobs(rw http.ResponseWriter, r *http.Request) {
+	if jobName := r.URL.Query().Get("job_name"); jobName != "" {
+		retried, err := c.client.RetryAllDeadJobsByJobName(jobName)
+		render(rw, map[string]any{"status": "ok", "retried": retried, "job_name": jobName}, err)
+		return
+	}
 	err := c.client.RetryAllDeadJobs()
 	render(rw, map[string]string{"status": "ok"}, err)
+}
+
+func (c *context) setMaxConcurrency(rw http.ResponseWriter, r *http.Request) {
+	jobName := r.PathValue("job_name")
+
+	var body struct {
+		MaxConcurrency uint `json:"max_concurrency"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(rw, "invalid json body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	prev, err := c.client.SetMaxConcurrency(jobName, body.MaxConcurrency)
+	if renderJobError(rw, err) {
+		return
+	}
+
+	render(rw, map[string]any{
+		"job_name":                 jobName,
+		"max_concurrency":          body.MaxConcurrency,
+		"previous_max_concurrency": prev,
+	}, nil)
+}
+
+func (c *context) pauseQueue(rw http.ResponseWriter, r *http.Request) {
+	jobName := r.PathValue("job_name")
+	wasPaused, err := c.client.PauseJob(jobName)
+	if renderJobError(rw, err) {
+		return
+	}
+	render(rw, map[string]any{
+		"job_name":          jobName,
+		"paused":            true,
+		"previously_paused": wasPaused,
+	}, nil)
+}
+
+func (c *context) resumeQueue(rw http.ResponseWriter, r *http.Request) {
+	jobName := r.PathValue("job_name")
+	wasPaused, err := c.client.ResumeJob(jobName)
+	if renderJobError(rw, err) {
+		return
+	}
+	render(rw, map[string]any{
+		"job_name":          jobName,
+		"paused":            false,
+		"previously_paused": wasPaused,
+	}, nil)
+}
+
+func (c *context) purgeQueue(rw http.ResponseWriter, r *http.Request) {
+	jobName := r.PathValue("job_name")
+	purged, err := c.client.PurgeQueue(jobName)
+	if renderJobError(rw, err) {
+		return
+	}
+	render(rw, map[string]any{
+		"job_name": jobName,
+		"purged":   purged,
+	}, nil)
+}
+
+func (c *context) resetLock(rw http.ResponseWriter, r *http.Request) {
+	jobName := r.PathValue("job_name")
+	prev, err := c.client.ResetLockCount(jobName)
+	if renderJobError(rw, err) {
+		return
+	}
+	render(rw, map[string]any{
+		"job_name":            jobName,
+		"lock_count":          0,
+		"previous_lock_count": prev,
+	}, nil)
 }
 
 func (c *context) indexPage(rw http.ResponseWriter, _ *http.Request) {
@@ -207,6 +296,18 @@ func renderError(rw http.ResponseWriter, err error) {
 	rw.Header().Set("Content-Type", "application/json; charset=utf-8")
 	rw.WriteHeader(500)
 	_, _ = fmt.Fprintf(rw, `{"error": "%s"}`, err.Error())
+}
+
+func renderJobError(rw http.ResponseWriter, err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, work.ErrUnknownJob) {
+		http.Error(rw, err.Error(), http.StatusNotFound)
+		return true
+	}
+	renderError(rw, err)
+	return true
 }
 
 func parsePage(r *http.Request) (uint, error) {

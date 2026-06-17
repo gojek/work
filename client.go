@@ -17,6 +17,14 @@ var ErrNotDeleted = fmt.Errorf("nothing deleted")
 // no object was actually retried by those commmands.
 var ErrNotRetried = fmt.Errorf("nothing retried")
 
+// ErrUnknownJob is returned by queue-management functions when the job name is not present in the
+// known jobs set (i.e. no worker pool has ever advertised handling that job).
+var ErrUnknownJob = fmt.Errorf("unknown job name")
+
+// DeadJobsBulkByJobNameCap caps dead jobs scanned by DeleteAllDeadJobsByJobName and
+// RetryAllDeadJobsByJobName.
+const DeadJobsBulkByJobNameCap = 1_000_000
+
 // Client implements all of the functionality of the web UI. It can be used to inspect the status of a running cluster and retry dead jobs.
 type Client struct {
 	namespace string
@@ -209,6 +217,7 @@ type Queue struct {
 	Latency        int64  `json:"latency"`
 	MaxConcurrency int64  `json:"max_concurrency"`
 	LockCount      int64  `json:"lock_count"`
+	Paused         bool   `json:"paused"`
 }
 
 // Queues returns the Queue's it finds.
@@ -227,6 +236,7 @@ func (c *Client) Queues() ([]*Queue, error) {
 		conn.Send("LLEN", redisKeyJobs(c.namespace, jobName))
 		conn.Send("GET", redisKeyJobsConcurrency(c.namespace, jobName))
 		conn.Send("GET", redisKeyJobsLock(c.namespace, jobName))
+		conn.Send("EXISTS", redisKeyJobsPaused(c.namespace, jobName))
 	}
 
 	if err := conn.Flush(); err != nil {
@@ -255,11 +265,18 @@ func (c *Client) Queues() ([]*Queue, error) {
 			return nil, err
 		}
 
+		pausedCount, err := redis.Int64(conn.Receive())
+		if err != nil && err != redis.ErrNil {
+			logError("client.queues.receive.paused", err)
+			return nil, err
+		}
+
 		queues = append(queues, &Queue{
 			JobName:        jobName,
 			Count:          count,
 			LockCount:      lockCount,
 			MaxConcurrency: maxConcurrency,
+			Paused:         pausedCount > 0,
 		})
 	}
 
@@ -484,6 +501,154 @@ func (c *Client) DeleteAllDeadJobs() error {
 	return nil
 }
 
+// DeleteAllDeadJobsByJobName deletes every dead job whose Name equals jobName and returns
+// the number deleted.
+func (c *Client) DeleteAllDeadJobsByJobName(jobName string) (int64, error) {
+	if jobName == "" {
+		return 0, fmt.Errorf("job name must be provided")
+	}
+
+	conn := c.pool.Get()
+	defer conn.Close()
+
+	key := redisKeyDead(c.namespace)
+	const chunk = 200
+
+	var toDelete []string
+	for offset := int64(0); offset < DeadJobsBulkByJobNameCap; offset += chunk {
+		members, err := redis.Strings(conn.Do("ZRANGEBYSCORE", key, "-inf", "+inf", "LIMIT", offset, chunk))
+		if err != nil {
+			logError("client.delete_all_dead_jobs_by_job_name.zrangebyscore", err)
+			return 0, err
+		}
+		if len(members) == 0 {
+			break
+		}
+		for _, raw := range members {
+			job, err := newJob([]byte(raw), nil, nil)
+			if err != nil {
+				logError("client.delete_all_dead_jobs_by_job_name.new_job", err)
+				continue
+			}
+			if job.Name == jobName {
+				toDelete = append(toDelete, raw)
+			}
+		}
+		if int64(len(members)) < chunk {
+			break
+		}
+	}
+
+	var deleted int64
+	for i := 0; i < len(toDelete); i += chunk {
+		end := i + chunk
+		if end > len(toDelete) {
+			end = len(toDelete)
+		}
+		args := make([]any, 0, end-i+1)
+		args = append(args, key)
+		for _, raw := range toDelete[i:end] {
+			args = append(args, raw)
+		}
+		n, err := redis.Int64(conn.Do("ZREM", args...))
+		if err != nil {
+			logError("client.delete_all_dead_jobs_by_job_name.zrem", err)
+			return deleted, err
+		}
+		deleted += n
+	}
+	return deleted, nil
+}
+
+// RetryAllDeadJobsByJobName re-enqueues every dead job whose Name equals jobName onto the
+// normal work queue and returns the number requeued.
+func (c *Client) RetryAllDeadJobsByJobName(jobName string) (int64, error) {
+	if jobName == "" {
+		return 0, fmt.Errorf("job name must be provided")
+	}
+
+	// Reuse the existing single-dead requeue Lua script per match.
+	queues, err := c.Queues()
+	if err != nil {
+		logError("client.retry_all_dead_jobs_by_job_name.queues", err)
+		return 0, err
+	}
+	jobNames := make([]string, 0, len(queues)+1)
+	seen := make(map[string]struct{}, len(queues)+1)
+	for _, q := range queues {
+		jobNames = append(jobNames, q.JobName)
+		seen[q.JobName] = struct{}{}
+	}
+	if _, ok := seen[jobName]; !ok {
+		jobNames = append(jobNames, jobName)
+	}
+
+	conn := c.pool.Get()
+	defer conn.Close()
+
+	key := redisKeyDead(c.namespace)
+	const chunk = 200
+
+	var matches []jobScore
+	for offset := int64(0); offset < DeadJobsBulkByJobNameCap; offset += chunk {
+		values, err := redis.Values(conn.Do("ZRANGEBYSCORE", key, "-inf", "+inf", "WITHSCORES", "LIMIT", offset, chunk))
+		if err != nil {
+			logError("client.retry_all_dead_jobs_by_job_name.zrangebyscore", err)
+			return 0, err
+		}
+		if len(values) == 0 {
+			break
+		}
+		var batch []jobScore
+		if err := redis.ScanSlice(values, &batch); err != nil {
+			logError("client.retry_all_dead_jobs_by_job_name.scan_slice", err)
+			return 0, err
+		}
+		for _, jws := range batch {
+			job, err := newJob(jws.JobBytes, nil, nil)
+			if err != nil {
+				logError("client.retry_all_dead_jobs_by_job_name.new_job", err)
+				continue
+			}
+			if job.Name == jobName {
+				matches = append(matches, jws)
+			}
+		}
+		if int64(len(batch)) < chunk {
+			break
+		}
+	}
+
+	script := redis.NewScript(len(jobNames)+1, redisLuaRequeueSingleDeadCmd)
+	var retried int64
+	for _, jws := range matches {
+		job, err := newJob(jws.JobBytes, nil, nil)
+		if err != nil {
+			logError("client.retry_all_dead_jobs_by_job_name.new_job", err)
+			continue
+		}
+
+		args := make([]any, 0, len(jobNames)+1+3)
+		args = append(args, key)
+		for _, jn := range jobNames {
+			args = append(args, redisKeyJobs(c.namespace, jn))
+		}
+		args = append(args, redisKeyJobsPrefix(c.namespace))
+		args = append(args, nowEpochSeconds())
+		args = append(args, jws.Score)
+		args = append(args, job.ID)
+
+		cnt, err := redis.Int64(script.Do(conn, args...))
+		if err != nil {
+			logError("client.retry_all_dead_jobs_by_job_name.do", err)
+			return retried, err
+		}
+		retried += cnt
+	}
+
+	return retried, nil
+}
+
 // DeleteScheduledJob deletes a job in the scheduled queue.
 func (c *Client) DeleteScheduledJob(scheduledFor int64, jobID string) error {
 	ok, jobBytes, err := c.deleteZsetJob(redisKeyScheduled(c.namespace), scheduledFor, jobID)
@@ -564,6 +729,143 @@ type jobScore struct {
 	JobBytes []byte
 	Score    int64
 	job      *Job
+}
+
+// jobNameKnown reports whether jobName has been registered by at least one worker pool.
+// Mutating queue-management operations should reject unknown job names to prevent typos
+// from creating dangling Redis keys that no worker will ever consume from.
+func (c *Client) jobNameKnown(jobName string) (bool, error) {
+	conn := c.pool.Get()
+	defer conn.Close()
+
+	ok, err := redis.Bool(conn.Do("SISMEMBER", redisKeyKnownJobs(c.namespace), jobName))
+	if err != nil {
+		logError("client.job_name_known", err)
+		return false, err
+	}
+	return ok, nil
+}
+
+// SetMaxConcurrency overrides the per-job-type concurrency limit at runtime and returns the
+// previous value so the caller can render a "was X, now Y" message.
+//
+// Note: this value is reset on the next worker-pool start by writeConcurrencyControlsToRedis,
+// so this knob is intentionally ephemeral and primarily intended for incident mitigation.
+func (c *Client) SetMaxConcurrency(jobName string, n uint) (int64, error) {
+	if known, err := c.jobNameKnown(jobName); err != nil {
+		return 0, err
+	} else if !known {
+		return 0, ErrUnknownJob
+	}
+
+	conn := c.pool.Get()
+	defer conn.Close()
+
+	prev, err := redis.Int64(conn.Do("GETSET", redisKeyJobsConcurrency(c.namespace, jobName), n))
+	if err != nil && err != redis.ErrNil {
+		logError("client.set_max_concurrency", err)
+		return 0, err
+	}
+	return prev, nil
+}
+
+// PauseJob sets the paused flag on the queue. The existing Lua fetcher in redis.go honors
+// this flag and will skip the queue. Returns whether the queue was already paused.
+func (c *Client) PauseJob(jobName string) (bool, error) {
+	if known, err := c.jobNameKnown(jobName); err != nil {
+		return false, err
+	} else if !known {
+		return false, ErrUnknownJob
+	}
+
+	conn := c.pool.Get()
+	defer conn.Close()
+
+	prev, err := redis.Int64(conn.Do("EXISTS", redisKeyJobsPaused(c.namespace, jobName)))
+	if err != nil {
+		logError("client.pause_job.exists", err)
+		return false, err
+	}
+	if _, err := conn.Do("SET", redisKeyJobsPaused(c.namespace, jobName), ""); err != nil {
+		logError("client.pause_job.set", err)
+		return false, err
+	}
+	return prev > 0, nil
+}
+
+// ResumeJob clears the paused flag. Returns whether the queue was previously paused.
+func (c *Client) ResumeJob(jobName string) (bool, error) {
+	if known, err := c.jobNameKnown(jobName); err != nil {
+		return false, err
+	} else if !known {
+		return false, ErrUnknownJob
+	}
+
+	conn := c.pool.Get()
+	defer conn.Close()
+
+	deleted, err := redis.Int64(conn.Do("DEL", redisKeyJobsPaused(c.namespace, jobName)))
+	if err != nil {
+		logError("client.resume_job", err)
+		return false, err
+	}
+	return deleted > 0, nil
+}
+
+// ResetLockCount forces the lock counter to zero, returning the previous value.
+//
+// This is an emergency tool. The dead pool reaper normally reconciles locks for crashed
+// pools (see dead_pool_reaper.go); reset_lock should be used only when an incident
+// requires immediate intervention and the operator accepts that running jobs may
+// momentarily exceed max_concurrency until the reaper next runs.
+func (c *Client) ResetLockCount(jobName string) (int64, error) {
+	if known, err := c.jobNameKnown(jobName); err != nil {
+		return 0, err
+	} else if !known {
+		return 0, ErrUnknownJob
+	}
+
+	conn := c.pool.Get()
+	defer conn.Close()
+
+	prev, err := redis.Int64(conn.Do("GETSET", redisKeyJobsLock(c.namespace, jobName), 0))
+	if err != nil && err != redis.ErrNil {
+		logError("client.reset_lock_count", err)
+		return 0, err
+	}
+	return prev, nil
+}
+
+// PurgeQueue deletes all pending jobs from the named queue and returns how many were removed.
+// In-progress jobs (held in per-pool inprogress queues) are not touched.
+func (c *Client) PurgeQueue(jobName string) (int64, error) {
+	if known, err := c.jobNameKnown(jobName); err != nil {
+		return 0, err
+	} else if !known {
+		return 0, ErrUnknownJob
+	}
+
+	conn := c.pool.Get()
+	defer conn.Close()
+
+	key := redisKeyJobs(c.namespace, jobName)
+	conn.Send("LLEN", key)
+	conn.Send("DEL", key)
+	if err := conn.Flush(); err != nil {
+		logError("client.purge_queue.flush", err)
+		return 0, err
+	}
+
+	purged, err := redis.Int64(conn.Receive())
+	if err != nil {
+		logError("client.purge_queue.llen", err)
+		return 0, err
+	}
+	if _, err := conn.Receive(); err != nil {
+		logError("client.purge_queue.del", err)
+		return 0, err
+	}
+	return purged, nil
 }
 
 func (c *Client) getZsetPage(key string, page uint) ([]jobScore, int64, error) {

@@ -6,6 +6,15 @@ go run main.go
 open "http://localhost:5040/"
 ```
 
+To exercise the admin (mutating) endpoints locally:
+
+```
+WORK_ADMIN_PASSWORD=secret go run ./cmd/workwebui
+```
+
+The browser will prompt for credentials (`admin` / `secret`) the first time you click
+Pause / Purge / Reset Lock / edit `max_concurrency` from the Queues page.
+
 ## Assets
 
 Web UI frontend is written in [react](https://facebook.github.io/react/). [Webpack](https://webpack.github.io/) is used to transpile and bundle es7 and jsx to run on modern browsers.

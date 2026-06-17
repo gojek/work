@@ -308,6 +308,92 @@ You'll see a view that looks like this:
 
 ![Web UI Screenshot](https://gocraft.github.io/work/images/webui.png)
 
+### Admin endpoints (optional)
+
+In addition to the read-only views above, the Web UI exposes a small set of mutating
+admin endpoints intended for incident response (e.g. pausing a hot queue or temporarily
+lowering `max_concurrency`). These endpoints are guarded by HTTP Basic Auth and are only
+registered when an admin password is supplied — leaving them off preserves the historical
+read-only behavior and keeps the surface secure-by-default.
+
+Enable the admin endpoints via CLI flags or env vars:
+
+```bash
+workwebui -redis="redis:6379" -ns="work" -listen=":5040" \
+  -admin-user="admin" -admin-password="$WORK_ADMIN_PASSWORD"
+# or:
+WORK_ADMIN_USER=admin WORK_ADMIN_PASSWORD=secret workwebui -redis=...
+```
+
+When `-admin-password` is empty (the default), nothing changes from the previous behavior:
+the admin routes are not registered at all.
+
+For library consumers, use the functional option on `webui.NewServer` / `webui.NewHandler`:
+
+```go
+import "github.com/gojek/work/webui"
+
+server := webui.NewServer(
+    "work", redisPool, ":5040",
+    webui.WithAdminBasicAuth("admin", os.Getenv("WORK_ADMIN_PASSWORD")),
+)
+```
+
+The existing 3-arg signatures continue to work unchanged.
+
+#### Endpoints
+
+| Method  | Path                                              | Description                                                                                  |
+| ------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| GET     | `/admin_status`                                   | Probe whether admin endpoints are enabled (always available).                                |
+| POST    | `/queues/{job_name}/pause`                        | Pause a queue (the existing fetcher honors this flag).                                       |
+| POST    | `/queues/{job_name}/resume`                       | Resume a paused queue.                                                                       |
+| POST    | `/queues/{job_name}/purge`                        | Delete all pending jobs from a queue. Returns the count purged.                              |
+| POST    | `/queues/{job_name}/reset_lock`                   | Force the lock counter back to 0. Use only if the dead-pool reaper has not recovered locks.  |
+| PUT     | `/queues/{job_name}/max_concurrency`              | Update `max_concurrency` for a queue. Body: `{"max_concurrency":N}`.                         |
+
+All admin endpoints return `404 Not Found` if `job_name` is not a registered job (i.e. no
+worker pool has ever advertised it), `401 Unauthorized` if Basic Auth is missing or wrong,
+and `200 OK` with a small JSON status payload on success.
+
+`GET /queues` was extended with a `paused: bool` field per queue.
+
+The pre-existing `POST /delete_all_dead_jobs` and `POST /retry_all_dead_jobs` endpoints
+accept an optional `?job_name=` query so an operator can bulk-delete or bulk-retry only
+the dead jobs matching a name (up to `DeadJobsBulkByJobNameCap`, currently 1,000,000).
+Without the query, behavior is unchanged (delete/retry the entire dead set). The Web UI
+exposes this via a small "Bulk delete or retry by job name" form on the dead-jobs page —
+typing the exact job name acts as the confirmation.
+
+#### From `curl` / runbooks
+
+Basic Auth is wire-level, so the same endpoints work from any HTTP client:
+
+```bash
+curl -u admin:$WORK_ADMIN_PASSWORD -X POST http://workui:5040/queues/send_email/pause
+curl -u admin:$WORK_ADMIN_PASSWORD -X PUT  http://workui:5040/queues/send_email/max_concurrency \
+     -H 'content-type: application/json' -d '{"max_concurrency":5}'
+curl -u admin:$WORK_ADMIN_PASSWORD -X POST http://workui:5040/queues/send_email/purge
+```
+
+#### Persistence semantics
+
+These changes are applied directly to Redis. They have different lifetimes:
+
+| Value             | Persists across worker-pool restart?                                 |
+| ----------------- | -------------------------------------------------------------------- |
+| `max_concurrency` | **No** — reset to compile-time `JobOptions.MaxConcurrency` on start. |
+| `paused`          | Yes — must be explicitly resumed.                                    |
+| `lock_count`      | Yes (but the reaper auto-corrects locks held by dead pools).         |
+
+This makes `max_concurrency` an inherently ephemeral incident-response knob; for permanent
+changes, update your `JobOptions` in code.
+
+#### Security note
+
+Basic Auth credentials are sent on every request. Always deploy the Web UI behind TLS
+(or a reverse proxy that terminates TLS) when admin is enabled.
+
 ## Design and concepts
 
 ### Enqueueing jobs

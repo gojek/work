@@ -17,7 +17,16 @@ var (
 	redisDatabase  = flag.String("database", "0", "redis database")
 	redisNamespace = flag.String("ns", "work", "redis namespace")
 	webHostPort    = flag.String("listen", ":5040", "hostport to listen for HTTP JSON API")
+	adminUser      = flag.String("admin-user", envOr("WORK_ADMIN_USER", "admin"), "username for admin Basic Auth (or WORK_ADMIN_USER env)")
+	adminPassword  = flag.String("admin-password", os.Getenv("WORK_ADMIN_PASSWORD"), "password for admin Basic Auth; empty disables admin endpoints (or WORK_ADMIN_PASSWORD env)")
 )
+
+func envOr(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
 
 func main() {
 	flag.Parse()
@@ -27,6 +36,11 @@ func main() {
 	fmt.Println("database = ", *redisDatabase)
 	fmt.Println("namespace = ", *redisNamespace)
 	fmt.Println("listen = ", *webHostPort)
+	if *adminPassword == "" {
+		fmt.Println("admin = disabled (set -admin-password or WORK_ADMIN_PASSWORD to enable)")
+	} else {
+		fmt.Printf("admin = enabled (user=%q)\n", *adminUser)
+	}
 
 	database, err := strconv.Atoi(*redisDatabase)
 	if err != nil {
@@ -36,7 +50,12 @@ func main() {
 
 	pool := newPool(*redisHostPort, database)
 
-	server := webui.NewServer(*redisNamespace, pool, *webHostPort)
+	var opts []webui.HandlerOption
+	if *adminPassword != "" {
+		opts = append(opts, webui.WithAdminBasicAuth(*adminUser, *adminPassword))
+	}
+
+	server := webui.NewServer(*redisNamespace, pool, *webHostPort, opts...)
 	server.Start()
 
 	c := make(chan os.Signal, 1)
