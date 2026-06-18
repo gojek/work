@@ -6,6 +6,14 @@ go run main.go
 open "http://localhost:5040/"
 ```
 
+To exercise the optional HTTP Basic Auth locally (protects the whole UI):
+
+```
+WORK_WEBUI_AUTH_PASSWORD=secret go run ./cmd/workwebui
+```
+
+The browser prompts for credentials (`admin` / `secret`) on first load.
+
 ## Assets
 
 Web UI frontend is written in [react](https://facebook.github.io/react/). [Webpack](https://webpack.github.io/) is used to transpile and bundle es7 and jsx to run on modern browsers.

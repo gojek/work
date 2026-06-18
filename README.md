@@ -308,6 +308,48 @@ You'll see a view that looks like this:
 
 ![Web UI Screenshot](https://gocraft.github.io/work/images/webui.png)
 
+### Queue management
+
+The Queues page can manage queues at runtime, which is useful during an incident:
+
+| Method | Path                                   | Description                                            |
+| ------ | -------------------------------------- | ------------------------------------------------------ |
+| PUT    | `/queues/{job_name}/max_concurrency`   | Update `max_concurrency`. Body: `{"max_concurrency":N}`. |
+| POST   | `/queues/{job_name}/pause`             | Pause a queue (the fetcher honors this flag).          |
+| POST   | `/queues/{job_name}/resume`            | Resume a paused queue.                                 |
+| POST   | `/queues/{job_name}/purge`             | Delete all pending jobs from a queue.                  |
+| POST   | `/queues/{job_name}/reset_lock`        | Force the lock counter back to 0 (emergency only).     |
+
+`GET /queues` also reports a `paused` boolean per queue. An unknown `job_name` returns `404`.
+
+These changes are written directly to Redis and have different lifetimes:
+
+| Value             | Persists across a worker-pool restart?                          |
+| ----------------- | -------------------------------------------------------------- |
+| `max_concurrency` | No — reset to the compile-time `JobOptions.MaxConcurrency`.    |
+| `paused`          | Yes — must be explicitly resumed.                             |
+| `lock_count`      | Yes (the reaper auto-corrects locks held by dead pools).      |
+
+### Optional HTTP Basic Auth
+
+The mutating endpoints above are always available. Because the Web UI typically runs on a
+non-standard port that already requires port-forwarding to reach, auth is opt-in. When a
+password is configured, HTTP Basic Auth protects the **entire** UI — pages, the JSON API,
+and the mutating endpoints; otherwise everything is served openly (the historical behavior).
+
+```bash
+# enable via flags or env (WORK_WEBUI_AUTH_USER / WORK_WEBUI_AUTH_PASSWORD)
+workwebui -listen=":5040" -auth-user="admin" -auth-password="s3cr3t"
+```
+
+When embedding the handler, pass `webui.WithBasicAuth`:
+
+```go
+handler := webui.NewHandler(client, webui.WithBasicAuth("admin", os.Getenv("WORK_WEBUI_AUTH_PASSWORD")))
+```
+
+Basic Auth credentials are sent on every request, so deploy behind TLS when it is enabled.
+
 ## Design and concepts
 
 ### Enqueueing jobs
